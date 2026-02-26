@@ -1,0 +1,8 @@
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/images/vivocare_logo.jpeg
+  min_sdk_android: 21
+  adaptive_icon_background: '#001442'
+  adaptive_icon_foreground: assets/images/vivocare_logo.jpeg
+  remove_alpha_ios: true
