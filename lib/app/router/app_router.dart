@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivocare/core/config/api_config.dart';
+import 'package:vivocare/core/navigation/home_user_context.dart';
 import 'package:vivocare/core/network/network_client.dart';
+import 'package:vivocare/features/auth/view/add_chemist_screen.dart';
+import 'package:vivocare/features/auth/view/add_doctor_screen.dart';
 import 'package:vivocare/features/auth/view/login_screen.dart';
 import 'package:vivocare/features/auth/view/login_success_screen.dart';
 import 'package:vivocare/features/auth/view_model/login_view_model.dart';
@@ -16,6 +19,8 @@ class AppRoutes {
   static const String login = '/login';
   static const String loginSuccess = '/login-success';
   static const String home = '/home';
+  static const String addDoctor = '/add-doctor';
+  static const String addChemist = '/add-chemist';
 }
 
 class AppRouter {
@@ -45,13 +50,13 @@ class AppRouter {
           ),
         );
       case AppRoutes.loginSuccess:
-        final String username = settings.arguments is String
-            ? settings.arguments! as String
-            : '';
+        final HomeUserContext homeUserContext = HomeUserContext.fromRouteArgs(
+          settings.arguments,
+        );
 
         return MaterialPageRoute<void>(
           settings: settings,
-          builder: (_) => LoginSuccessScreen(username: username),
+          builder: (_) => LoginSuccessScreen(userContext: homeUserContext),
         );
       case AppRoutes.home:
         return MaterialPageRoute<void>(
@@ -60,6 +65,16 @@ class AppRouter {
             create: (_) => HomeViewModel(),
             child: const HomeScreen(),
           ),
+        );
+      case AppRoutes.addDoctor:
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const AddDoctorScreen(),
+        );
+      case AppRoutes.addChemist:
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const AddChemistScreen(),
         );
       default:
         return MaterialPageRoute<void>(

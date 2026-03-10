@@ -36,6 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   provider: ^6.1.5
   http: ^1.5.0
+  path_provider: ^2.1.5
+  shared_preferences: ^2.5.3
+  syncfusion_flutter_pdfviewer: ^31.2.5
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +65,10 @@ flutter:
 
   assets:
     - assets/images/vivocare_logo.jpeg
+    - assets/presentations/ilovepdf_merged.pdf
+    - assets/presentations/ilovepdf_merged_compat.pdf
+    - assets/presentations/ilovepdf_merged_flat.pdf
+    - assets/presentations/slides/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

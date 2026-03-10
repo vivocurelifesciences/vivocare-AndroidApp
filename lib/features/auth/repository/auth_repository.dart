@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:vivocare/core/config/api_config.dart';
 import 'package:vivocare/core/network/network_exception.dart';
 import 'package:vivocare/core/network/network_client.dart';
 import 'package:vivocare/core/network/network_response.dart';
@@ -19,11 +21,13 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<LoginResponse> login(LoginRequest request) async {
     final NetworkResponse<dynamic> response = await _networkClient.post(
-      '/login',
+      '${ApiConfig.apiVersionPath}/auth/login',
       body: request.toJson(),
     );
 
     final dynamic responseData = response.data;
+    debugPrintSynchronously('[API][LOGIN] STATUS: ${response.statusCode}');
+    debugPrintSynchronously('[API][LOGIN] RESPONSE: $responseData');
     if (responseData is! Map<String, dynamic>) {
       throw const NetworkException(
         message: 'Invalid login response from server.',

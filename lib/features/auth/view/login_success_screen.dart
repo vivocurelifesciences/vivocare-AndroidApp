@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:vivocare/app/router/app_router.dart';
+import 'package:vivocare/core/navigation/home_user_context.dart';
 import 'package:vivocare/core/theme/app_colors.dart';
 
 class LoginSuccessScreen extends StatefulWidget {
-  const LoginSuccessScreen({super.key, required this.username});
+  const LoginSuccessScreen({super.key, required this.userContext});
 
-  final String username;
+  final HomeUserContext userContext;
 
   @override
   State<LoginSuccessScreen> createState() => _LoginSuccessScreenState();
@@ -28,7 +29,7 @@ class _LoginSuccessScreenState extends State<LoginSuccessScreen> {
     _navigated = true;
     Navigator.of(
       context,
-    ).pushReplacementNamed(AppRoutes.home, arguments: widget.username);
+    ).pushReplacementNamed(AppRoutes.home, arguments: widget.userContext);
   }
 
   @override
@@ -77,7 +78,7 @@ class _LoginSuccessScreenState extends State<LoginSuccessScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Welcome ${widget.username.isEmpty ? 'User' : widget.username}',
+                    'Welcome ${widget.userContext.userName.isEmpty ? 'User' : widget.userContext.userName}',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),

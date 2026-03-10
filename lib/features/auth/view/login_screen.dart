@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:vivocare/app/router/app_router.dart';
+import 'package:vivocare/core/config/api_config.dart';
 import 'package:vivocare/core/theme/app_colors.dart';
 import 'package:vivocare/core/widgets/app_logo.dart';
 import 'package:vivocare/features/auth/view_model/login_view_model.dart';
@@ -112,6 +114,37 @@ class LoginScreen extends StatelessWidget {
                               : const Text('Login'),
                         ),
                       ),
+                      if (ApiConfig.isLowerEnvironment) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                            ),
+                            onPressed: () {
+                              final String username = viewModel
+                                  .usernameController
+                                  .text
+                                  .trim();
+                              Navigator.of(context).pushReplacementNamed(
+                                AppRoutes.home,
+                                arguments: username.isEmpty
+                                    ? 'Lower Env User'
+                                    : username,
+                              );
+                            },
+                            child: const Text(
+                              'Bypass Login',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

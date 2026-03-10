@@ -115,13 +115,6 @@ class NetworkClient {
       ..headers.addAll(_defaultHeaders)
       ..headers.addAll(headers ?? <String, String>{});
 
-    // log outgoing request
-    debugPrint('➡️ HTTP ${method.value} $uri');
-    debugPrint('Headers: ${request.headers}');
-    if (request.body.isNotEmpty) {
-      debugPrint('Body: ${request.body}');
-    }
-
     if (body != null) {
       if (body is String) {
         request.headers['Content-Type'] ??= 'text/plain; charset=utf-8';
@@ -134,6 +127,11 @@ class NetworkClient {
       }
     }
 
+    final String fullUrl = uri.toString();
+    _logApi('REQUEST ${method.value} URL: $fullUrl');
+    _logApi('REQUEST_HEADERS: ${request.headers}');
+    _logApi('REQUEST_BODY: ${request.body.isEmpty ? '<empty>' : request.body}');
+
     try {
       final http.StreamedResponse streamedResponse = await _httpClient
           .send(request)
@@ -142,8 +140,8 @@ class NetworkClient {
         streamedResponse,
       );
 
-      // log incoming response
-      debugPrint('⬅️ Response [${response.statusCode}] ${response.body}');
+      _logApi('RESPONSE URL: $fullUrl STATUS: ${response.statusCode}');
+      _logApi('RESPONSE_BODY: ${response.body}');
 
       final dynamic data = _decodeBody(response);
 
@@ -234,31 +232,44 @@ class NetworkClient {
   }
 
   String? _extractMessage(dynamic data) {
+    if (data is String && data.trim().isNotEmpty) {
+      return data.trim();
+    }
+
+    if (data is List) {
+      for (final dynamic item in data) {
+        final String? extracted = _extractMessage(item);
+        if (extracted != null && extracted.isNotEmpty) {
+          return extracted;
+        }
+      }
+      return null;
+    }
+
     if (data is! Map<String, dynamic>) {
       return null;
     }
 
-    final Object? message = data['message'];
-    if (message is String && message.trim().isNotEmpty) {
-      return message.trim();
+    const List<String> preferredKeys = <String>[
+      'message',
+      'msg',
+      'error',
+      'detail',
+      'error_details',
+      'description',
+    ];
+
+    for (final String key in preferredKeys) {
+      final String? extracted = _extractMessage(data[key]);
+      if (extracted != null && extracted.isNotEmpty) {
+        return extracted;
+      }
     }
 
-    final Object? error = data['error'];
-    if (error is String && error.trim().isNotEmpty) {
-      return error.trim();
-    }
-
-    final Object? detail = data['detail'];
-    if (detail is String && detail.trim().isNotEmpty) {
-      return detail.trim();
-    }
-    if (detail is List && detail.isNotEmpty) {
-      final Object first = detail.first;
-      if (first is Map<String, dynamic>) {
-        final Object? firstMessage = first['msg'];
-        if (firstMessage is String && firstMessage.trim().isNotEmpty) {
-          return firstMessage.trim();
-        }
+    for (final Object? value in data.values) {
+      final String? extracted = _extractMessage(value);
+      if (extracted != null && extracted.isNotEmpty) {
+        return extracted;
       }
     }
 
@@ -286,5 +297,15 @@ class NetworkClient {
 
   void close() {
     _httpClient.close();
+  }
+
+  void _logApi(String message) {
+    // Use synchronous + chunked logging so logs are not dropped/truncated.
+    const int chunkSize = 900;
+    final String prefixed = '[API] $message';
+    for (int start = 0; start < prefixed.length; start += chunkSize) {
+      final int end = (start + chunkSize).clamp(0, prefixed.length);
+      debugPrintSynchronously(prefixed.substring(start, end));
+    }
   }
 }

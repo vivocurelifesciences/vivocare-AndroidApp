@@ -8,11 +8,13 @@ class HomeSidebar extends StatelessWidget {
     super.key,
     required this.items,
     required this.width,
+    required this.onItemTap,
     this.compact = false,
   });
 
   final List<HomeMenuItem> items;
   final double width;
+  final ValueChanged<int> onItemTap;
   final bool compact;
 
   @override
@@ -55,39 +57,7 @@ class HomeSidebar extends StatelessWidget {
 
                 return InkWell(
                   borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    if (item.label != 'Home') {
-                      // show under construction dialog
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(
-                                Icons.construction_rounded,
-                                size: 64,
-                                color: Colors.orange,
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'Work is under progress',
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('OK'),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    // if Home tapped we simply do nothing; navigation handled
-                    // elsewhere or by active state logic
-                  },
+                  onTap: () => onItemTap(index),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: item.isActive
@@ -107,7 +77,7 @@ class HomeSidebar extends StatelessWidget {
                         children: [
                           Icon(
                             item.icon,
-                            size: compact ? 20 : 24, // slightly larger icons
+                            size: compact ? 18 : 20,
                             color: iconColor,
                           ),
                           if (!compact) ...[
@@ -118,6 +88,7 @@ class HomeSidebar extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(
+                                      fontSize: 13,
                                       color: labelColor,
                                       fontWeight: item.isActive
                                           ? FontWeight.w600
