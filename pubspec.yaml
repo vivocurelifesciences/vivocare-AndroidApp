@@ -1,4 +1,4 @@
-name: vivocare
+name: vivocure
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -38,7 +38,6 @@ dependencies:
   http: ^1.5.0
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
-  syncfusion_flutter_pdfviewer: ^31.2.5
 
 dev_dependencies:
   flutter_test:
@@ -64,7 +63,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/vivocare_logo.jpeg
+    - assets/images/vivocure_logo.jpeg
     - assets/presentations/ilovepdf_merged.pdf
     - assets/presentations/ilovepdf_merged_compat.pdf
     - assets/presentations/ilovepdf_merged_flat.pdf

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:vivocare/app/router/app_router.dart';
+import 'package:vivocure/app/router/app_router.dart';
 
 class SplashViewModel extends ChangeNotifier {
   bool _started = false;

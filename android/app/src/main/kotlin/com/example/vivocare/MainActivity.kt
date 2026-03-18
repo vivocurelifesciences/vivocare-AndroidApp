@@ -1,4 +1,4 @@
-package com.example.vivocare
+package com.example.vivocure
 
 import io.flutter.embedding.android.FlutterActivity
 

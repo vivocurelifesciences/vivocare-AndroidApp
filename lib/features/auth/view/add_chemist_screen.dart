@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:vivocare/core/auth/auth_storage.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/network/network_client.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/network/network_response.dart';
-import 'package:vivocare/features/auth/view/widgets/swipe_action_tile.dart';
+import 'package:vivocure/core/auth/auth_storage.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/network/network_client.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/widgets/app_page_backdrop.dart';
+import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
 
 enum _ChemistActionMode { add, edit }
 
@@ -19,7 +20,8 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final GlobalKey _formSectionKey = GlobalKey();
 
-  final TextEditingController _fullNameController = TextEditingController();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _contactPersonNameController =
@@ -29,6 +31,12 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   final TextEditingController _contactPersonDobController =
       TextEditingController();
   final TextEditingController _contactPersonDomController =
+      TextEditingController();
+  final TextEditingController _expectedSupportValueController =
+      TextEditingController();
+  final TextEditingController _potentialController = TextEditingController();
+  final TextEditingController _supportValueController = TextEditingController();
+  final TextEditingController _experienceYearsController =
       TextEditingController();
   final TextEditingController _stateController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
@@ -42,6 +50,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   bool _isSubmitting = false;
   bool _isActionInProgress = false;
   bool _isLoadingChemists = false;
+  bool _showValidationErrors = false;
   List<_ChemistRecord> _chemistRecords = <_ChemistRecord>[];
   _ChemistRecord? _selectedChemist;
   String? _centerMessage;
@@ -58,13 +67,18 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
 
   @override
   void dispose() {
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
     _contactPersonNameController.dispose();
     _contactPersonEmailController.dispose();
     _contactPersonDobController.dispose();
     _contactPersonDomController.dispose();
+    _expectedSupportValueController.dispose();
+    _potentialController.dispose();
+    _supportValueController.dispose();
+    _experienceYearsController.dispose();
     _stateController.dispose();
     _cityController.dispose();
     _areaController.dispose();
@@ -84,6 +98,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     setState(() {
       _mode = mode;
       _selectedChemist = null;
+      _showValidationErrors = false;
       _searchController.clear();
       _chemistRecords = mode == _ChemistActionMode.add
           ? _chemistRecords
@@ -127,9 +142,9 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     return '${date.year}-$month-$day';
   }
 
-  String? _validateRequired(String? value) {
+  String? _validateRequired(String? value, {required String fieldLabel}) {
     if (value == null || value.trim().isEmpty) {
-      return 'This field is required.';
+      return '$fieldLabel is required.';
     }
     return null;
   }
@@ -145,15 +160,72 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     return null;
   }
 
+  String? _validateOptionalPhone(String? value) {
+    final String trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final String normalized = trimmed.replaceAll(RegExp(r'\s+'), '');
+    if (!RegExp(r'^[0-9]{10,15}$').hasMatch(normalized)) {
+      return 'Enter a valid phone number.';
+    }
+    return null;
+  }
+
+  String? _validateDate(
+    String? value, {
+    required String fieldLabel,
+    bool required = false,
+  }) {
+    final String trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return required ? '$fieldLabel is required.' : null;
+    }
+    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(trimmed)) {
+      return 'Use YYYY-MM-DD format.';
+    }
+    if (DateTime.tryParse(trimmed) == null) {
+      return 'Enter a valid $fieldLabel.';
+    }
+    return null;
+  }
+
+  String? _validateNonNegativeInteger(
+    String? value, {
+    required String fieldLabel,
+  }) {
+    final String trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final int? parsed = int.tryParse(trimmed);
+    if (parsed == null) {
+      return 'Enter a valid $fieldLabel.';
+    }
+    if (parsed < 0) {
+      return '$fieldLabel cannot be negative.';
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     final FormState? form = _formKey.currentState;
-    if (form == null || !form.validate()) {
+    if (form == null) {
+      return;
+    }
+    if (!form.validate()) {
+      setState(() {
+        _showValidationErrors = true;
+      });
+      _scrollToForm();
       return;
     }
 
     if (_mode == _ChemistActionMode.edit && _selectedChemist == null) {
-      _showCenterMessage('Swipe left on a chemist and tap Edit first.',
-          isError: true);
+      _showCenterMessage(
+        'Swipe left on a chemist and tap Edit first.',
+        isError: true,
+      );
       return;
     }
 
@@ -349,7 +421,8 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       });
 
       _showCenterMessage(
-        _extractResponseMessage(response.data) ?? 'Chemist deleted successfully',
+        _extractResponseMessage(response.data) ??
+            'Chemist deleted successfully',
       );
       await _loadChemists(search: _searchController.text);
     } on NetworkException catch (error) {
@@ -448,13 +521,21 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   }
 
   void _applyChemistToForm(_ChemistRecord chemist) {
-    _fullNameController.text = chemist.fullName;
+    final ({String firstName, String lastName}) nameParts = _splitFullName(
+      chemist.fullName,
+    );
+    _firstNameController.text = nameParts.firstName;
+    _lastNameController.text = nameParts.lastName;
     _phoneController.text = chemist.phone;
     _emailController.text = chemist.email;
     _contactPersonNameController.text = chemist.contactPersonName;
     _contactPersonEmailController.text = chemist.contactPersonEmail;
     _contactPersonDobController.text = chemist.contactPersonDob;
     _contactPersonDomController.text = chemist.contactPersonDom;
+    _expectedSupportValueController.text = chemist.expectedSupportValue;
+    _potentialController.text = chemist.potential;
+    _supportValueController.text = chemist.supportValue;
+    _experienceYearsController.text = chemist.experienceYears;
     _stateController.text = chemist.state;
     _cityController.text = chemist.city;
     _areaController.text = chemist.area;
@@ -462,32 +543,44 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   }
 
   void _clearForm() {
-    _fullNameController.clear();
+    _firstNameController.clear();
+    _lastNameController.clear();
     _phoneController.clear();
     _emailController.clear();
     _contactPersonNameController.clear();
     _contactPersonEmailController.clear();
     _contactPersonDobController.clear();
     _contactPersonDomController.clear();
+    _expectedSupportValueController.clear();
+    _potentialController.clear();
+    _supportValueController.clear();
+    _experienceYearsController.clear();
     _stateController.clear();
     _cityController.clear();
     _areaController.clear();
     _countryController.clear();
+    _showValidationErrors = false;
   }
 
   Map<String, dynamic> _buildChemistRequestBody() {
     return <String, dynamic>{
-      'full_name': _nullIfEmpty(_fullNameController.text),
-      'phone': _nullIfEmpty(_phoneController.text),
-      'email': _nullIfEmpty(_emailController.text),
-      'contact_person_name': _nullIfEmpty(_contactPersonNameController.text),
-      'contact_person_email': _nullIfEmpty(_contactPersonEmailController.text),
-      'contact_person_dob': _nullIfEmpty(_contactPersonDobController.text),
-      'contact_person_dom': _nullIfEmpty(_contactPersonDomController.text),
-      'state': _nullIfEmpty(_stateController.text),
-      'city': _nullIfEmpty(_cityController.text),
-      'area': _nullIfEmpty(_areaController.text),
-      'country': _nullIfEmpty(_countryController.text),
+      'full_name': _buildChemistFullName(),
+      'phone': _textOrEmpty(_phoneController.text),
+      'email': _textOrEmpty(_emailController.text),
+      'contact_person_name': _textOrEmpty(_contactPersonNameController.text),
+      'contact_person_email': _textOrEmpty(_contactPersonEmailController.text),
+      'contact_person_dob': _textOrEmpty(_contactPersonDobController.text),
+      'contact_person_dom': _textOrEmpty(_contactPersonDomController.text),
+      'expected_support_value': _intOrEmpty(
+        _expectedSupportValueController.text,
+      ),
+      'potential': _intOrEmpty(_potentialController.text),
+      'support_value': _intOrEmpty(_supportValueController.text),
+      'experience_years': _intOrEmpty(_experienceYearsController.text),
+      'state': _textOrEmpty(_stateController.text),
+      'city': _textOrEmpty(_cityController.text),
+      'area': _textOrEmpty(_areaController.text),
+      'country': _textOrEmpty(_countryController.text),
     };
   }
 
@@ -495,9 +588,38 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     return <String, String>{'Authorization': session.authorizationHeader};
   }
 
-  String? _nullIfEmpty(String value) {
+  String _textOrEmpty(String value) {
+    return value.trim();
+  }
+
+  Object _intOrEmpty(String value) {
     final String trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    return int.tryParse(trimmed) ?? trimmed;
+  }
+
+  String _buildChemistFullName() {
+    return <String>[
+      _firstNameController.text.trim(),
+      _lastNameController.text.trim(),
+    ].where((String value) => value.isNotEmpty).join(' ');
+  }
+
+  ({String firstName, String lastName}) _splitFullName(String fullName) {
+    final List<String> parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (parts.isEmpty) {
+      return (firstName: '', lastName: '');
+    }
+    if (parts.length == 1) {
+      return (firstName: parts.first, lastName: '');
+    }
+    return (firstName: parts.first, lastName: parts.sublist(1).join(' '));
   }
 
   String? _extractResponseMessage(dynamic data) {
@@ -543,10 +665,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     });
   }
 
-  Widget _buildSurface({
-    required Widget child,
-    Key? key,
-  }) {
+  Widget _buildSurface({required Widget child, Key? key}) {
     return DecoratedBox(
       key: key,
       decoration: BoxDecoration(
@@ -561,10 +680,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }
 
@@ -584,10 +700,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
           const SizedBox(height: 6),
           const Text(
             'Swipe left on any chemist row to reveal Edit and Delete.',
-            style: TextStyle(
-              fontSize: 13,
-              color: Color(0xFF6C7A89),
-            ),
+            style: TextStyle(fontSize: 13, color: Color(0xFF6C7A89)),
           ),
           const SizedBox(height: 16),
           Row(
@@ -643,6 +756,14 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
+                SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Expected SV',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
               ],
             ),
           ),
@@ -663,69 +784,80 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
               child: const Text(
                 'No chemists found.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF6C7A89),
-                ),
+                style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
               ),
             )
           else
             Column(
-              children: _chemistRecords.map((_ChemistRecord chemist) {
-                final bool isSelected = _selectedChemist?.id == chemist.id;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: SwipeActionTile(
-                    onEdit: () => _handleEditChemist(chemist),
-                    onDelete: () => _handleDeleteChemist(chemist),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFFEAF4FF)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: isSelected
-                              ? const Color(0xFF1E88E5)
-                              : const Color(0xFFDCE6F0),
+              children: _chemistRecords
+                  .map((_ChemistRecord chemist) {
+                    final bool isSelected = _selectedChemist?.id == chemist.id;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: SwipeActionTile(
+                        onEdit: () => _handleEditChemist(chemist),
+                        onDelete: () => _handleDeleteChemist(chemist),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFEAF4FF)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF1E88E5)
+                                  : const Color(0xFFDCE6F0),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 4,
+                                child: Text(
+                                  chemist.fullName,
+                                  style: TextStyle(
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w600,
+                                    color: const Color(0xFF1D3557),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  chemist.chemistCode.isEmpty
+                                      ? '-'
+                                      : chemist.chemistCode,
+                                  style: const TextStyle(
+                                    color: Color(0xFF52606D),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  chemist.expectedSupportValue.isEmpty
+                                      ? '-'
+                                      : chemist.expectedSupportValue,
+                                  style: const TextStyle(
+                                    color: Color(0xFF52606D),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Text(
-                              chemist.fullName,
-                              style: TextStyle(
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: const Color(0xFF1D3557),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              chemist.chemistCode.isEmpty
-                                  ? '-'
-                                  : chemist.chemistCode,
-                              style: const TextStyle(
-                                color: Color(0xFF52606D),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(growable: false),
+                    );
+                  })
+                  .toList(growable: false),
             ),
         ],
       ),
@@ -740,6 +872,9 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       key: _formSectionKey,
       child: Form(
         key: _formKey,
+        autovalidateMode: _showValidationErrors
+            ? AutovalidateMode.onUserInteraction
+            : AutovalidateMode.disabled,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -756,10 +891,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
               isEditMode
                   ? 'Choose a chemist from the list above, then update the fields below.'
                   : 'Fill the chemist details and save them to the API.',
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF6C7A89),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6C7A89)),
             ),
             if (isEditMode && _selectedChemist != null) ...[
               const SizedBox(height: 14),
@@ -791,22 +923,25 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                 child: const Text(
                   'No chemist selected yet. Swipe left on a row above and tap Edit.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF6C7A89),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
                 ),
               )
             else ...[
               _FormTextField(
-                controller: _fullNameController,
-                label: 'Full Name *',
-                validator: _validateRequired,
+                controller: _firstNameController,
+                label: 'First Name *',
+                validator: (String? value) =>
+                    _validateRequired(value, fieldLabel: 'First name'),
+              ),
+              _FormTextField(
+                controller: _lastNameController,
+                label: 'Last Name',
               ),
               _FormTextField(
                 controller: _phoneController,
                 label: 'Phone',
                 keyboardType: TextInputType.phone,
+                validator: _validateOptionalPhone,
               ),
               _FormTextField(
                 controller: _emailController,
@@ -822,34 +957,59 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                 controller: _contactPersonEmailController,
                 label: 'Contact Person Email',
                 keyboardType: TextInputType.emailAddress,
-                validator: _validateEmail,
               ),
               _DateField(
                 controller: _contactPersonDobController,
                 label: 'Contact Person DOB (YYYY-MM-DD)',
                 onTap: () => _pickDate(_contactPersonDobController),
+                validator: (String? value) =>
+                    _validateDate(value, fieldLabel: 'Contact person DOB'),
               ),
               _DateField(
                 controller: _contactPersonDomController,
                 label: 'Contact Person DOM (YYYY-MM-DD)',
                 onTap: () => _pickDate(_contactPersonDomController),
+                validator: (String? value) =>
+                    _validateDate(value, fieldLabel: 'Contact person DOM'),
               ),
               _FormTextField(
-                controller: _stateController,
-                label: 'State',
+                controller: _expectedSupportValueController,
+                label: 'Expected Support Value',
+                keyboardType: TextInputType.number,
+                validator: (String? value) => _validateNonNegativeInteger(
+                  value,
+                  fieldLabel: 'Expected support value',
+                ),
               ),
               _FormTextField(
-                controller: _cityController,
-                label: 'City',
+                controller: _potentialController,
+                label: 'Potential',
+                keyboardType: TextInputType.number,
+                validator: (String? value) =>
+                    _validateNonNegativeInteger(value, fieldLabel: 'Potential'),
               ),
               _FormTextField(
-                controller: _areaController,
-                label: 'Area',
+                controller: _supportValueController,
+                label: 'Support Value',
+                keyboardType: TextInputType.number,
+                validator: (String? value) => _validateNonNegativeInteger(
+                  value,
+                  fieldLabel: 'Support value',
+                ),
               ),
               _FormTextField(
-                controller: _countryController,
-                label: 'Country',
+                controller: _experienceYearsController,
+                label: 'Experience Years',
+                keyboardType: TextInputType.number,
+                validator: (String? value) => _validateNonNegativeInteger(
+                  value,
+                  fieldLabel: 'Experience years',
+                ),
               ),
+              _FormTextField(controller: _stateController, label: 'State'),
+              _FormTextField(controller: _cityController, label: 'City'),
+              _FormTextField(controller: _areaController, label: 'Area'),
+              _FormTextField(controller: _countryController, label: 'Country'),
               const SizedBox(height: 16),
               SizedBox(
                 height: 48,
@@ -861,9 +1021,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                           width: 18,
                           child: CircularProgressIndicator(strokeWidth: 2.2),
                         )
-                      : Text(
-                          isEditMode ? 'Update Chemist' : 'Save Chemist',
-                        ),
+                      : Text(isEditMode ? 'Update Chemist' : 'Save Chemist'),
                 ),
               ),
             ],
@@ -877,95 +1035,97 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Chemist')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Stack(
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 920),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildSurface(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _ModeButton(
-                                label: 'Add Chemist',
-                                isActive: _mode == _ChemistActionMode.add,
-                                onTap: () =>
-                                    _switchMode(_ChemistActionMode.add),
+      body: AppPageBackdrop(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Stack(
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 920),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSurface(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _ModeButton(
+                                  label: 'Add Chemist',
+                                  isActive: _mode == _ChemistActionMode.add,
+                                  onTap: () =>
+                                      _switchMode(_ChemistActionMode.add),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _ModeButton(
-                                label: 'Edit Chemist',
-                                isActive: _mode == _ChemistActionMode.edit,
-                                onTap: () =>
-                                    _switchMode(_ChemistActionMode.edit),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _ModeButton(
+                                  label: 'Edit Chemist',
+                                  isActive: _mode == _ChemistActionMode.edit,
+                                  onTap: () =>
+                                      _switchMode(_ChemistActionMode.edit),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      if (_mode == _ChemistActionMode.edit) ...[
+                        if (_mode == _ChemistActionMode.edit) ...[
+                          const SizedBox(height: 16),
+                          _buildChemistListCard(),
+                        ],
                         const SizedBox(height: 16),
-                        _buildChemistListCard(),
+                        _buildFormCard(),
                       ],
-                      const SizedBox(height: 16),
-                      _buildFormCard(),
-                    ],
-                  ),
-                ),
-              ),
-              if (_isBusy)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      child: const Center(child: CircularProgressIndicator()),
                     ),
                   ),
                 ),
-              if (_centerMessage != null)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _isCenterMessageError
-                                ? const Color(0xFFFFF2F2)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
+                if (_isBusy)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+                  ),
+                if (_centerMessage != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
                               color: _isCenterMessageError
-                                  ? const Color(0xFFFFC9C9)
-                                  : const Color(0xFFE3EAF3),
+                                  ? const Color(0xFFFFF2F2)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _isCenterMessageError
+                                    ? const Color(0xFFFFC9C9)
+                                    : const Color(0xFFE3EAF3),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            _centerMessage!,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                            child: Text(
+                              _centerMessage!,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -997,10 +1157,7 @@ class _ModeButton extends StatelessWidget {
           foregroundColor: isActive ? Colors.white : colorScheme.primary,
           side: BorderSide(color: colorScheme.primary),
         ),
-        child: Text(
-          label,
-          overflow: TextOverflow.ellipsis,
-        ),
+        child: Text(label, overflow: TextOverflow.ellipsis),
       ),
     );
   }
@@ -1038,11 +1195,13 @@ class _DateField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.onTap,
+    this.validator,
   });
 
   final TextEditingController controller;
   final String label;
   final VoidCallback onTap;
+  final String? Function(String?)? validator;
 
   @override
   Widget build(BuildContext context) {
@@ -1052,6 +1211,7 @@ class _DateField extends StatelessWidget {
         controller: controller,
         readOnly: true,
         onTap: onTap,
+        validator: validator,
         decoration: InputDecoration(
           labelText: label,
           suffixIcon: IconButton(
@@ -1075,6 +1235,10 @@ class _ChemistRecord {
     required this.contactPersonEmail,
     required this.contactPersonDob,
     required this.contactPersonDom,
+    required this.potential,
+    required this.supportValue,
+    required this.expectedSupportValue,
+    required this.experienceYears,
     required this.state,
     required this.city,
     required this.area,
@@ -1090,6 +1254,10 @@ class _ChemistRecord {
   final String contactPersonEmail;
   final String contactPersonDob;
   final String contactPersonDom;
+  final String potential;
+  final String supportValue;
+  final String expectedSupportValue;
+  final String experienceYears;
   final String state;
   final String city;
   final String area;
@@ -1115,6 +1283,10 @@ class _ChemistRecord {
       contactPersonEmail: _asString(json['contact_person_email']),
       contactPersonDob: _asDateString(json['contact_person_dob']),
       contactPersonDom: _asDateString(json['contact_person_dom']),
+      potential: _asString(json['potential']),
+      supportValue: _asString(json['support_value']),
+      expectedSupportValue: _asString(json['expected_support_value']),
+      experienceYears: _asString(json['experience_years']),
       state: _asString(json['state']),
       city: _asString(json['city']),
       area: _asString(json['area']),

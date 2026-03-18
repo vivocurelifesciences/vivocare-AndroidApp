@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:vivocare/core/auth/auth_storage.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/navigation/home_user_context.dart';
-import 'package:vivocare/core/network/network_client.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/products/product_cache_service.dart';
-import 'package:vivocare/features/home/model/home_menu_item.dart';
+import 'package:vivocure/core/auth/auth_storage.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/navigation/home_user_context.dart';
+import 'package:vivocure/core/network/network_client.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/products/product_cache_service.dart';
+import 'package:vivocure/features/home/model/home_menu_item.dart';
 
 class HomeViewModel extends ChangeNotifier {
   static const int homeMenuIndex = 0;
@@ -15,12 +15,12 @@ class HomeViewModel extends ChangeNotifier {
   static const int addChemistMenuIndex = 4;
   static const int logoutMenuIndex = 5;
 
-  String _userName = 'Jiwan Prakash Mishra';
+  String _userName = '';
   String _roleName = '';
   String _employeeCode = '';
   int _selectedMenuIndex = homeMenuIndex;
   final List<PlanMeetEntry> _planMeetEntries = <PlanMeetEntry>[];
-  final List<DcrEntry> _dcrEntries = <DcrEntry>[];
+  final List<DcrEntry> _apiDcrEntries = <DcrEntry>[];
   final NetworkClient _networkClient = NetworkClient(
     scheme: ApiConfig.scheme,
     host: ApiConfig.host,
@@ -36,8 +36,15 @@ class HomeViewModel extends ChangeNotifier {
   int _chemistVisits = 0;
   bool _isPlanMeetLoading = false;
   String? _planMeetErrorMessage;
+  bool _isDcrLoading = false;
+  String? _dcrErrorMessage;
+  bool _isTodayDcrFilter = true;
+  DateTime _dcrStartDate = DateTime.now();
+  DateTime _dcrEndDate = DateTime.now();
   DateTime _currentPlanMeetDate = DateTime.now();
   List<MedicinePresentation> _medicinePresentations = <MedicinePresentation>[];
+  final Map<String, CustomerProfile> _customerProfilesById =
+      <String, CustomerProfile>{};
 
   // primary sidebar items
   List<HomeMenuItem> get menuItems => <HomeMenuItem>[
@@ -69,9 +76,14 @@ class HomeViewModel extends ChangeNotifier {
   int get chemistVisits => _chemistVisits;
   bool get isPlanMeetLoading => _isPlanMeetLoading;
   String? get planMeetErrorMessage => _planMeetErrorMessage;
+  bool get isDcrLoading => _isDcrLoading;
+  String? get dcrErrorMessage => _dcrErrorMessage;
+  bool get isTodayDcrFilter => _isTodayDcrFilter;
+  DateTime get dcrStartDate => _toDateOnly(_dcrStartDate);
+  DateTime get dcrEndDate => _toDateOnly(_dcrEndDate);
   DateTime get currentPlanMeetDate => _toDateOnly(_currentPlanMeetDate);
 
-  String get userName => _userName;
+  String get userName => _userName.trim().isEmpty ? 'User' : _userName;
 
   String get employeeMeta {
     final String role = _roleName.trim();
@@ -86,7 +98,7 @@ class HomeViewModel extends ChangeNotifier {
     if (code.isNotEmpty) {
       return '($code)';
     }
-    return '(FLM | Discovery | 1465)';
+    return '';
   }
 
   String get greeting {
@@ -131,75 +143,6 @@ class HomeViewModel extends ChangeNotifier {
 
   String get todaysTip => 'No Record Found';
 
-  List<String> get dummyDoctors => const <String>[
-    'Dr. Gayathri Patil',
-    'Dr. Subhash Katakdare',
-    'Dr. Shrikant V. Patil',
-    'Dr. V. B. Bharati',
-    'Dr. Ajit Mane',
-    'Dr. Priya Joshi',
-  ];
-
-  List<String> get dummyChemists => const <String>[
-    'Gayatri Medico',
-    'Patil Pharma',
-    'LifeCare Chemist',
-    'Apollo Pharmacy Nerul',
-    'Sanjivani Medical',
-    'Wellness Chemist Point',
-  ];
-
-  List<DoctorProfile> get dummyDoctorProfiles => const <DoctorProfile>[
-    DoctorProfile(
-      name: 'Dr. Gayathri Patil',
-      qualification: 'MBBS, MD',
-      speciality: 'Internal Medicine',
-      phone: '9820011101',
-      area: 'Khopoli',
-      city: 'Raigad',
-    ),
-    DoctorProfile(
-      name: 'Dr. Subhash Katakdare',
-      qualification: 'MBBS',
-      speciality: 'General Physician',
-      phone: '9820011102',
-      area: 'Khopoli - 2',
-      city: 'Raigad',
-    ),
-    DoctorProfile(
-      name: 'Dr. Shrikant V. Patil',
-      qualification: 'MBBS, DNB',
-      speciality: 'Cardiology',
-      phone: '9820011103',
-      area: 'Khopoli - 1',
-      city: 'Raigad',
-    ),
-    DoctorProfile(
-      name: 'Dr. V. B. Bharati',
-      qualification: 'MBBS, MD',
-      speciality: 'Pediatrics',
-      phone: '9820011104',
-      area: 'Nerul East',
-      city: 'Navi Mumbai',
-    ),
-    DoctorProfile(
-      name: 'Dr. Ajit Mane',
-      qualification: 'MBBS',
-      speciality: 'Orthopedics',
-      phone: '9820011105',
-      area: 'Panvel',
-      city: 'Raigad',
-    ),
-    DoctorProfile(
-      name: 'Dr. Priya Joshi',
-      qualification: 'MBBS, MD',
-      speciality: 'Gynecology',
-      phone: '9820011106',
-      area: 'Belapur',
-      city: 'Navi Mumbai',
-    ),
-  ];
-
   List<MedicinePresentation> get medicinePresentations =>
       List<MedicinePresentation>.unmodifiable(_medicinePresentations);
 
@@ -211,13 +154,33 @@ class HomeViewModel extends ChangeNotifier {
       List<PlanMeetEntry>.unmodifiable(_planMeetEntries);
 
   List<DcrEntry> get dcrEntries {
-    final List<DcrEntry> copy = List<DcrEntry>.from(_dcrEntries);
+    final Map<String, DcrEntry> entriesByKey = <String, DcrEntry>{};
+    for (final DcrEntry entry in _apiDcrEntries) {
+      final String key = _buildDcrKey(
+        date: entry.dcrDate,
+        customerType: entry.customerType,
+        customerName: entry.customerName,
+        customerCode: entry.customerCode,
+      );
+      final DcrEntry? existing = entriesByKey[key];
+      if (existing == null || entry.updatedAt.isAfter(existing.updatedAt)) {
+        entriesByKey[key] = entry;
+      }
+    }
+
+    final List<DcrEntry> copy = entriesByKey.values.toList(growable: false);
     copy.sort((DcrEntry a, DcrEntry b) {
       final int byDate = b.dcrDate.compareTo(a.dcrDate);
       if (byDate != 0) {
         return byDate;
       }
-      return b.updatedAt.compareTo(a.updatedAt);
+      final int byUpdatedAt = b.updatedAt.compareTo(a.updatedAt);
+      if (byUpdatedAt != 0) {
+        return byUpdatedAt;
+      }
+      return a.customerName.toLowerCase().compareTo(
+        b.customerName.toLowerCase(),
+      );
     });
     return List<DcrEntry>.unmodifiable(copy);
   }
@@ -392,8 +355,8 @@ class HomeViewModel extends ChangeNotifier {
   void resetForLogout() {
     _selectedMenuIndex = homeMenuIndex;
     _planMeetEntries.clear();
-    _dcrEntries.clear();
-    _upcomingEvents.clear();
+    _apiDcrEntries.clear();
+    _upcomingEvents = <UpcomingEvent>[];
     _upcomingEventsErrorMessage = null;
     _upcomingEventsSectionLabel = 'Birthdays & Anniversaries';
     _isTodayPlanLoading = false;
@@ -403,24 +366,14 @@ class HomeViewModel extends ChangeNotifier {
     _chemistVisits = 0;
     _isPlanMeetLoading = false;
     _planMeetErrorMessage = null;
+    _isDcrLoading = false;
+    _dcrErrorMessage = null;
+    _isTodayDcrFilter = true;
+    _dcrStartDate = DateTime.now();
+    _dcrEndDate = DateTime.now();
     _currentPlanMeetDate = DateTime.now();
     _medicinePresentations = <MedicinePresentation>[];
-  }
-
-  void addPlanMeetEntry({required String type, required String name}) {
-    _planMeetEntries.insert(
-      0,
-      PlanMeetEntry(
-        id: '',
-        customerId: '',
-        customerCode: '',
-        type: type,
-        name: name,
-        visitDate: _toDateOnly(DateTime.now()),
-        createdAt: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    _customerProfilesById.clear();
   }
 
   Future<PlanDropdownData> fetchPlanDoctorChemistDropdown() async {
@@ -461,6 +414,27 @@ class HomeViewModel extends ChangeNotifier {
           .where((PlanCustomerOption item) => item.normalizedType == 'chemist')
           .toList(growable: false);
     }
+
+    try {
+      await _refreshCustomerProfiles(session);
+    } on NetworkException catch (error) {
+      if (error.type == NetworkExceptionType.unauthorized) {
+        rethrow;
+      }
+    }
+
+    final Map<String, CustomerProfile> profilesById = _customerProfilesById;
+
+    doctors = doctors
+        .map(
+          (PlanCustomerOption item) => item.mergeProfile(profilesById[item.id]),
+        )
+        .toList(growable: false);
+    chemists = chemists
+        .map(
+          (PlanCustomerOption item) => item.mergeProfile(profilesById[item.id]),
+        )
+        .toList(growable: false);
 
     doctors.sort((PlanCustomerOption a, PlanCustomerOption b) {
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -507,6 +481,56 @@ class HomeViewModel extends ChangeNotifier {
     await fetchPlanMeetEntries(visitDate: visitDate);
     await fetchTodayPlan();
     return _extractMessage(responseData) ?? 'Plans created successfully.';
+  }
+
+  Future<String> createDcr({
+    required String planId,
+    required int supportValue,
+    required int expectedSupportValue,
+    List<String> productIds = const <String>[],
+  }) async {
+    final String trimmedPlanId = planId.trim();
+    if (trimmedPlanId.isEmpty) {
+      throw const NetworkException(
+        message: 'Plan id is missing for this entry.',
+        type: NetworkExceptionType.unknown,
+      );
+    }
+
+    final AuthSession session = await AuthStorage.loadSession();
+    if (!session.hasAccessToken) {
+      throw const NetworkException(
+        message: 'Session expired. Please login again.',
+        type: NetworkExceptionType.unauthorized,
+      );
+    }
+
+    final String productIdsValue = productIds
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .join(',');
+
+    final Map<String, dynamic> body = <String, dynamic>{
+      'plan_id': trimmedPlanId,
+      'support_value': supportValue,
+      'expected_support_value': expectedSupportValue,
+    };
+    if (productIdsValue.isNotEmpty) {
+      body['product_ids'] = productIdsValue;
+    }
+
+    final dynamic responseData = (await _networkClient.post(
+      '${ApiConfig.apiVersionPath}/dcr',
+      headers: <String, String>{'Authorization': session.authorizationHeader},
+      body: body,
+    )).data;
+
+    await fetchDcrEntries(
+      todayOnly: _isTodayDcrFilter,
+      startDate: _dcrStartDate,
+      endDate: _dcrEndDate,
+    );
+    return _extractMessage(responseData) ?? 'DCR created successfully.';
   }
 
   Future<void> fetchPlanMeetEntries({DateTime? visitDate}) async {
@@ -556,6 +580,17 @@ class HomeViewModel extends ChangeNotifier {
               .where((PlanMeetEntry item) => item.name.trim().isNotEmpty),
         );
 
+      if (_planMeetEntries.isNotEmpty &&
+          _shouldRefreshCustomerProfiles(_planMeetEntries)) {
+        try {
+          await _refreshCustomerProfiles(session);
+        } on NetworkException catch (error) {
+          if (error.type == NetworkExceptionType.unauthorized) {
+            rethrow;
+          }
+        }
+      }
+
       _planMeetEntries.sort((PlanMeetEntry a, PlanMeetEntry b) {
         final int byVisitDate = b.visitDate.compareTo(a.visitDate);
         if (byVisitDate != 0) {
@@ -575,28 +610,145 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 
-  List<DateTime> getDcrDateOptions() {
-    final DateTime today = _toDateOnly(DateTime.now());
-    return List<DateTime>.generate(
-      7,
-      (int index) => today.subtract(Duration(days: index)),
+  Future<void> fetchDcrEntries({
+    String filterType = 'today',
+    bool? todayOnly,
+    DateTime? startDate,
+    DateTime? endDate,
+    String sortOrder = 'asc',
+    int limit = 100,
+  }) async {
+    if (_isDcrLoading) {
+      return;
+    }
+
+    _isDcrLoading = true;
+    _dcrErrorMessage = null;
+    final bool resolvedTodayOnly = todayOnly ?? _isTodayDcrFilter;
+    _isTodayDcrFilter = resolvedTodayOnly;
+    if (!resolvedTodayOnly) {
+      final DateTime resolvedStartDate = _toDateOnly(
+        startDate ?? _dcrStartDate,
+      );
+      final DateTime resolvedEndDate = _toDateOnly(endDate ?? _dcrEndDate);
+      _dcrStartDate = resolvedStartDate;
+      _dcrEndDate = resolvedEndDate.isBefore(resolvedStartDate)
+          ? resolvedStartDate
+          : resolvedEndDate;
+    }
+    notifyListeners();
+
+    try {
+      final AuthSession session = await AuthStorage.loadSession();
+      if (!session.hasAccessToken) {
+        _apiDcrEntries.clear();
+        _dcrErrorMessage = 'Session expired. Please login again.';
+        return;
+      }
+
+      final dynamic responseData = (await _networkClient.get(
+        '${ApiConfig.apiVersionPath}/dcr',
+        headers: <String, String>{'Authorization': session.authorizationHeader},
+        queryParameters: <String, dynamic>{
+          'filter_type': filterType,
+          'sort_order': sortOrder,
+          'limit': limit,
+          if (!resolvedTodayOnly) 'start_date': formatApiDate(_dcrStartDate),
+          if (!resolvedTodayOnly) 'end_date': formatApiDate(_dcrEndDate),
+        },
+      )).data;
+
+      final Map<String, dynamic> root = _asMap(responseData);
+      dynamic rawItems = root['data'];
+      if (rawItems is! List) {
+        final Map<String, dynamic> nested = _asMap(root['data']);
+        rawItems = nested['items'];
+        if (rawItems is! List) {
+          rawItems = nested['data'];
+        }
+        if (rawItems is! List) {
+          rawItems = nested['dcrs'];
+        }
+      }
+
+      final List<dynamic> items = rawItems is List ? rawItems : <dynamic>[];
+      _apiDcrEntries
+        ..clear()
+        ..addAll(
+          items
+              .map<DcrEntry>((dynamic item) => DcrEntry.fromJson(_asMap(item)))
+              .where((DcrEntry item) => item.customerName.isNotEmpty),
+        );
+    } on NetworkException catch (error) {
+      _apiDcrEntries.clear();
+      _dcrErrorMessage = error.message;
+    } catch (_) {
+      _apiDcrEntries.clear();
+      _dcrErrorMessage = 'Unable to load DCR entries.';
+    } finally {
+      _isDcrLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> setDcrDateRange({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final DateTime normalizedStartDate = _toDateOnly(startDate);
+    final DateTime normalizedEndDate = _toDateOnly(endDate);
+    _dcrStartDate = normalizedStartDate.isAfter(normalizedEndDate)
+        ? normalizedEndDate
+        : normalizedStartDate;
+    _dcrEndDate = normalizedEndDate.isBefore(normalizedStartDate)
+        ? normalizedStartDate
+        : normalizedEndDate;
+    _isTodayDcrFilter = false;
+    notifyListeners();
+    await fetchDcrEntries(
+      todayOnly: false,
+      startDate: _dcrStartDate,
+      endDate: _dcrEndDate,
     );
   }
 
-  DoctorProfile getDoctorProfile(String doctorName) {
-    for (final DoctorProfile profile in dummyDoctorProfiles) {
-      if (profile.name.toLowerCase() == doctorName.toLowerCase()) {
+  Future<void> fetchTodayDcrEntries() async {
+    _isTodayDcrFilter = true;
+    notifyListeners();
+    await fetchDcrEntries(todayOnly: true);
+  }
+
+  CustomerProfile getCustomerProfileForEntry(PlanMeetEntry entry) {
+    final CustomerProfile? byId = _customerProfilesById[entry.customerId];
+    if (byId != null) {
+      return byId;
+    }
+
+    for (final CustomerProfile profile in _customerProfilesById.values) {
+      if (profile.type == entry.type.trim().toLowerCase() &&
+          profile.name.toLowerCase() == entry.name.toLowerCase()) {
         return profile;
       }
     }
 
-    return DoctorProfile(
-      name: doctorName,
-      qualification: 'MBBS',
-      speciality: 'General Physician',
-      phone: 'NA',
-      area: 'NA',
-      city: 'NA',
+    return CustomerProfile(
+      id: entry.customerId,
+      code: entry.customerCode,
+      type: entry.isDoctor ? 'doctor' : entry.type.trim().toLowerCase(),
+      name: entry.name,
+      qualification: '-',
+      speciality: '-',
+      phone: '-',
+      area: '-',
+      city: '-',
+      state: '-',
+      country: '-',
+      potential: '-',
+      supportValue: '-',
+      expectedSupportValue: '-',
+      email: '-',
+      contactPersonName: '-',
+      contactPersonEmail: '-',
     );
   }
 
@@ -626,39 +778,6 @@ class HomeViewModel extends ChangeNotifier {
     return _medicinePresentations
         .where((MedicinePresentation item) => normalizedIds.contains(item.id))
         .toList(growable: false);
-  }
-
-  void saveOrMergeDcr({
-    required DateTime date,
-    required List<String> doctors,
-    required List<String> chemists,
-  }) {
-    final DateTime normalizedDate = _toDateOnly(date);
-    final DateTime now = DateTime.now();
-    final int existingIndex = _dcrEntries.indexWhere(
-      (DcrEntry entry) => _isSameDay(entry.dcrDate, normalizedDate),
-    );
-
-    if (existingIndex >= 0) {
-      final DcrEntry existing = _dcrEntries[existingIndex];
-      _dcrEntries[existingIndex] = DcrEntry(
-        dcrDate: normalizedDate,
-        doctorNames: _mergeUnique(existing.doctorNames, doctors),
-        chemistNames: _mergeUnique(existing.chemistNames, chemists),
-        updatedAt: now,
-      );
-    } else {
-      _dcrEntries.add(
-        DcrEntry(
-          dcrDate: normalizedDate,
-          doctorNames: _mergeUnique(const <String>[], doctors),
-          chemistNames: _mergeUnique(const <String>[], chemists),
-          updatedAt: now,
-        ),
-      );
-    }
-
-    notifyListeners();
   }
 
   String formatDcrDropdownDate(DateTime date) {
@@ -704,25 +823,35 @@ class HomeViewModel extends ChangeNotifier {
     return DateTime(value.year, value.month, value.day);
   }
 
-  bool _isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
+  bool _shouldRefreshCustomerProfiles(Iterable<PlanMeetEntry> entries) {
+    if (_customerProfilesById.isEmpty) {
+      return true;
+    }
+
+    for (final PlanMeetEntry entry in entries) {
+      if (entry.customerId.trim().isEmpty) {
+        continue;
+      }
+      if (!_customerProfilesById.containsKey(entry.customerId.trim())) {
+        return true;
+      }
+    }
+    return false;
   }
 
-  List<String> _mergeUnique(List<String> existing, List<String> incoming) {
-    final Set<String> merged = <String>{};
-    for (final String item in existing) {
-      final String trimmed = item.trim();
-      if (trimmed.isNotEmpty) {
-        merged.add(trimmed);
-      }
-    }
-    for (final String item in incoming) {
-      final String trimmed = item.trim();
-      if (trimmed.isNotEmpty) {
-        merged.add(trimmed);
-      }
-    }
-    return merged.toList(growable: false);
+  String _buildDcrKey({
+    required DateTime date,
+    required String customerType,
+    required String customerName,
+    required String customerCode,
+  }) {
+    final DateTime normalizedDate = _toDateOnly(date);
+    return <String>[
+      formatApiDate(normalizedDate),
+      customerType.trim().toLowerCase(),
+      customerName.trim().toLowerCase(),
+      customerCode.trim().toLowerCase(),
+    ].join('|');
   }
 
   List<PlanCustomerOption> _parsePlanCustomerOptions(
@@ -744,6 +873,70 @@ class HomeViewModel extends ChangeNotifier {
       }
     }
     return items;
+  }
+
+  Map<String, CustomerProfile> _parseCustomerProfilesFromListResponse(
+    dynamic responseData, {
+    required String type,
+  }) {
+    final Map<String, dynamic> root = _asMap(responseData);
+    dynamic rawItems = root['data'];
+    if (rawItems is! List) {
+      final Map<String, dynamic> nested = _asMap(root['data']);
+      rawItems = nested['items'];
+      if (rawItems is! List) {
+        rawItems = nested['data'];
+      }
+    }
+
+    final List<dynamic> items = rawItems is List ? rawItems : <dynamic>[];
+    final Map<String, CustomerProfile> profilesById =
+        <String, CustomerProfile>{};
+    for (final dynamic item in items) {
+      final CustomerProfile profile = CustomerProfile.fromJson(
+        _asMap(item),
+        fallbackType: type,
+      );
+      if (profile.id.isNotEmpty) {
+        profilesById[profile.id] = profile;
+      }
+    }
+    return profilesById;
+  }
+
+  Future<void> _refreshCustomerProfiles(AuthSession session) async {
+    final List<dynamic>
+    detailedResponses = await Future.wait<dynamic>(<Future<dynamic>>[
+      _networkClient.get(
+        '${ApiConfig.apiVersionPath}/doctors',
+        headers: <String, String>{'Authorization': session.authorizationHeader},
+        queryParameters: <String, dynamic>{'limit': 100, 'sort_order': 'asc'},
+      ),
+      _networkClient.get(
+        '${ApiConfig.apiVersionPath}/chemists',
+        headers: <String, String>{'Authorization': session.authorizationHeader},
+        queryParameters: <String, dynamic>{'limit': 100, 'sort_order': 'asc'},
+      ),
+    ]);
+
+    final Map<String, CustomerProfile> profilesById =
+        _parseCustomerProfilesFromListResponse(
+          detailedResponses[0].data,
+          type: 'doctor',
+        )..addAll(
+          _parseCustomerProfilesFromListResponse(
+            detailedResponses[1].data,
+            type: 'chemist',
+          ),
+        );
+
+    if (profilesById.isEmpty) {
+      return;
+    }
+
+    _customerProfilesById
+      ..clear()
+      ..addAll(profilesById);
   }
 
   String? _extractMessage(dynamic data) {
@@ -902,10 +1095,7 @@ class PlanMeetEntry {
 }
 
 class PlanDropdownData {
-  const PlanDropdownData({
-    required this.doctors,
-    required this.chemists,
-  });
+  const PlanDropdownData({required this.doctors, required this.chemists});
 
   final List<PlanCustomerOption> doctors;
   final List<PlanCustomerOption> chemists;
@@ -917,12 +1107,38 @@ class PlanCustomerOption {
     required this.name,
     required this.code,
     required this.customerType,
+    this.potential = '',
+    this.supportValue = '',
+    this.expectedSupportValue = '',
+    this.qualification = '',
+    this.speciality = '',
+    this.phone = '',
+    this.area = '',
+    this.city = '',
+    this.state = '',
+    this.country = '',
+    this.email = '',
+    this.contactPersonName = '',
+    this.contactPersonEmail = '',
   });
 
   final String id;
   final String name;
   final String code;
   final String customerType;
+  final String potential;
+  final String supportValue;
+  final String expectedSupportValue;
+  final String qualification;
+  final String speciality;
+  final String phone;
+  final String area;
+  final String city;
+  final String state;
+  final String country;
+  final String email;
+  final String contactPersonName;
+  final String contactPersonEmail;
 
   String get normalizedType => customerType.trim().toLowerCase();
 
@@ -950,40 +1166,239 @@ class PlanCustomerOption {
       customerType: _readStringValue(json['customer_type']).isEmpty
           ? fallbackType
           : _readStringValue(json['customer_type']),
+      potential: _readNumericStringValue(json['potential']),
+      supportValue: _readNumericStringValue(json['support_value']),
+      expectedSupportValue: _readNumericStringValue(
+        json['expected_support_value'],
+      ),
+      qualification: _readStringValue(json['qualification']),
+      speciality: _readStringValue(json['speciality']),
+      phone: _readStringValue(json['phone']),
+      area: _readStringValue(json['area']),
+      city: _readStringValue(json['city']),
+      state: _readStringValue(json['state']),
+      country: _readStringValue(json['country']),
+      email: _readStringValue(json['email']),
+      contactPersonName: _readStringValue(json['contact_person_name']),
+      contactPersonEmail: _readStringValue(json['contact_person_email']),
+    );
+  }
+
+  PlanCustomerOption mergeProfile(CustomerProfile? profile) {
+    if (profile == null) {
+      return this;
+    }
+    return PlanCustomerOption(
+      id: id,
+      name: name,
+      code: code,
+      customerType: customerType,
+      potential: profile.potential,
+      supportValue: profile.supportValue,
+      expectedSupportValue: profile.expectedSupportValue,
+      qualification: profile.qualification,
+      speciality: profile.speciality,
+      phone: profile.phone,
+      area: profile.area,
+      city: profile.city,
+      state: profile.state,
+      country: profile.country,
+      email: profile.email,
+      contactPersonName: profile.contactPersonName,
+      contactPersonEmail: profile.contactPersonEmail,
     );
   }
 }
 
 class DcrEntry {
   const DcrEntry({
-    required this.dcrDate,
-    required this.doctorNames,
-    required this.chemistNames,
+    required this.id,
+    required this.planId,
+    required this.customerId,
+    required this.customerType,
+    required this.customerName,
+    required this.customerCode,
+    required this.visitDateTime,
+    required this.remarks,
+    required this.supportValue,
+    required this.potential,
+    required this.expectedSupportValue,
+    required this.products,
     required this.updatedAt,
+    this.isLocalOnly = false,
   });
 
-  final DateTime dcrDate;
-  final List<String> doctorNames;
-  final List<String> chemistNames;
+  final String id;
+  final String planId;
+  final String customerId;
+  final String customerType;
+  final String customerName;
+  final String customerCode;
+  final DateTime visitDateTime;
+  final String remarks;
+  final String supportValue;
+  final String potential;
+  final String expectedSupportValue;
+  final List<DcrProduct> products;
   final DateTime updatedAt;
+  final bool isLocalOnly;
+
+  DateTime get dcrDate =>
+      DateTime(visitDateTime.year, visitDateTime.month, visitDateTime.day);
+
+  String get normalizedType => customerType.trim().toLowerCase();
+
+  String get typeLabel {
+    if (normalizedType.isEmpty) {
+      return 'Unknown';
+    }
+    return '${normalizedType[0].toUpperCase()}${normalizedType.substring(1)}';
+  }
+
+  factory DcrEntry.fromJson(Map<String, dynamic> json) {
+    final DateTime visitDateTime = _readDateTimeValue(json['visit_datetime']);
+    final List<dynamic> rawProducts = json['products'] is List
+        ? json['products'] as List<dynamic>
+        : <dynamic>[];
+    return DcrEntry(
+      id: _readStringValue(json['id']),
+      planId: _readStringValue(json['plan_id']),
+      customerId: _readStringValue(json['customer_id']),
+      customerType: _readStringValue(json['customer_type']),
+      customerName: _readStringValue(json['customer_name']),
+      customerCode: _readStringValue(json['customer_code']),
+      visitDateTime: visitDateTime,
+      remarks: _readStringValue(json['remarks']),
+      supportValue: _readNumericStringValue(json['support_value']),
+      potential: _readNumericStringValue(json['potential']),
+      expectedSupportValue: _readNumericStringValue(
+        json['expected_support_value'],
+      ),
+      products: rawProducts
+          .map<DcrProduct>(
+            (dynamic item) => DcrProduct.fromJson(_readMapValue(item)),
+          )
+          .toList(growable: false),
+      updatedAt: _readDateTimeValue(
+        json['updated_at'],
+        fallback: _readDateTimeValue(json['udt'], fallback: visitDateTime),
+      ),
+    );
+  }
 }
 
-class DoctorProfile {
-  const DoctorProfile({
-    required this.name,
-    required this.qualification,
-    required this.speciality,
-    required this.phone,
-    required this.area,
-    required this.city,
+class DcrProduct {
+  const DcrProduct({
+    required this.id,
+    required this.productName,
+    required this.productCode,
   });
 
+  final String id;
+  final String productName;
+  final String productCode;
+
+  String get displayLabel {
+    if (productCode.isEmpty) {
+      return productName;
+    }
+    if (productName.isEmpty) {
+      return productCode;
+    }
+    return '$productName ($productCode)';
+  }
+
+  factory DcrProduct.fromJson(Map<String, dynamic> json) {
+    return DcrProduct(
+      id: _readStringValue(json['id']),
+      productName: _readStringValue(json['product_name']),
+      productCode: _readStringValue(json['product_code']),
+    );
+  }
+}
+
+class CustomerProfile {
+  const CustomerProfile({
+    required this.id,
+    required this.code,
+    required this.type,
+    required this.name,
+    this.qualification = '',
+    this.speciality = '',
+    this.phone = '',
+    this.area = '',
+    this.city = '',
+    this.state = '',
+    this.country = '',
+    this.potential = '',
+    this.supportValue = '',
+    this.expectedSupportValue = '',
+    this.email = '',
+    this.contactPersonName = '',
+    this.contactPersonEmail = '',
+  });
+
+  final String id;
+  final String code;
+  final String type;
   final String name;
   final String qualification;
   final String speciality;
   final String phone;
   final String area;
   final String city;
+  final String state;
+  final String country;
+  final String potential;
+  final String supportValue;
+  final String expectedSupportValue;
+  final String email;
+  final String contactPersonName;
+  final String contactPersonEmail;
+
+  factory CustomerProfile.fromJson(
+    Map<String, dynamic> json, {
+    required String fallbackType,
+  }) {
+    final String normalizedType =
+        _readStringValue(json['customer_type']).isEmpty
+        ? fallbackType
+        : _readStringValue(json['customer_type']).toLowerCase();
+
+    final String resolvedName = normalizedType == 'doctor'
+        ? <String>[
+            _readStringValue(json['first_name']),
+            _readStringValue(json['middle_name']),
+            _readStringValue(json['last_name']),
+          ].where((String item) => item.isNotEmpty).join(' ').trim()
+        : _readStringValue(json['full_name']).isEmpty
+        ? _readStringValue(json['name'])
+        : _readStringValue(json['full_name']);
+
+    return CustomerProfile(
+      id: _readStringValue(json['id']),
+      code: normalizedType == 'doctor'
+          ? _readStringValue(json['doctor_code'])
+          : _readStringValue(json['chemist_code']),
+      type: normalizedType,
+      name: resolvedName,
+      qualification: _readStringValue(json['qualification']),
+      speciality: _readStringValue(json['speciality']),
+      phone: _readStringValue(json['phone']),
+      area: _readStringValue(json['area']),
+      city: _readStringValue(json['city']),
+      state: _readStringValue(json['state']),
+      country: _readStringValue(json['country']),
+      potential: _readNumericStringValue(json['potential']),
+      supportValue: _readNumericStringValue(json['support_value']),
+      expectedSupportValue: _readNumericStringValue(
+        json['expected_support_value'],
+      ),
+      email: _readStringValue(json['email']),
+      contactPersonName: _readStringValue(json['contact_person_name']),
+      contactPersonEmail: _readStringValue(json['contact_person_email']),
+    );
+  }
 }
 
 class MedicinePresentation {
@@ -1010,6 +1425,45 @@ String _readStringValue(Object? value) {
     return '';
   }
   return value.toString().trim();
+}
+
+String _readNumericStringValue(Object? value) {
+  if (value == null) {
+    return '';
+  }
+  if (value is num) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toString();
+  }
+  return _readStringValue(value);
+}
+
+Map<String, dynamic> _readMapValue(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (Object? key, Object? value) =>
+          MapEntry<String, dynamic>(key.toString(), value),
+    );
+  }
+  return <String, dynamic>{};
+}
+
+DateTime _readDateTimeValue(Object? value, {DateTime? fallback}) {
+  if (value is DateTime) {
+    return value;
+  }
+
+  final String raw = _readStringValue(value);
+  if (raw.isEmpty) {
+    return fallback ?? DateTime.now();
+  }
+
+  return DateTime.tryParse(raw) ?? fallback ?? DateTime.now();
 }
 
 DateTime _readDateValue(Object? value, {DateTime? fallback}) {

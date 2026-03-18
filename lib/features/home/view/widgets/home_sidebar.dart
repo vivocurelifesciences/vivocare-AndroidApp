@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:vivocare/core/theme/app_colors.dart';
-import 'package:vivocare/core/widgets/app_logo.dart';
-import 'package:vivocare/features/home/model/home_menu_item.dart';
+import 'package:vivocure/core/theme/app_colors.dart';
+import 'package:vivocure/core/widgets/app_panel.dart';
+import 'package:vivocure/features/home/model/home_menu_item.dart';
 
 class HomeSidebar extends StatelessWidget {
   const HomeSidebar({
@@ -16,96 +16,135 @@ class HomeSidebar extends StatelessWidget {
   final double width;
   final ValueChanged<int> onItemTap;
   final bool compact;
+  static const String _sidebarLogoAsset = 'assets/images/vivocure_logo.jpeg';
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: width,
-      decoration: const BoxDecoration(
-        color: AppColors.sidebarBackground,
-        border: Border(right: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              compact ? 10 : 16,
-              14,
-              compact ? 10 : 16,
-              14,
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: AppLogo(size: compact ? 38 : 48, showTagline: !compact),
-            ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 0, 12),
+        child: AppPanel(
+          padding: EdgeInsets.fromLTRB(
+            compact ? 10 : 14,
+            14,
+            compact ? 10 : 14,
+            14,
           ),
-          const Divider(color: AppColors.border, height: 1),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 6),
-              itemBuilder: (BuildContext context, int index) {
-                final HomeMenuItem item = items[index];
+          borderRadius: 28,
+          backgroundColor: Colors.white.withValues(alpha: 0.88),
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                height: compact ? 88 : 128,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: <Color>[Color(0xFF123F70), Color(0xFF1F78CC)],
+                  ),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  _sidebarLogoAsset,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (BuildContext context, int index) {
+                    final HomeMenuItem item = items[index];
+                    final bool isActive = item.isActive;
+                    final Color iconColor = isActive
+                        ? Colors.white
+                        : AppColors.textSecondary;
+                    final Color labelColor = isActive
+                        ? Colors.white
+                        : AppColors.textPrimary;
 
-                final Color iconColor = item.isActive
-                    ? AppColors.primaryBlueDark
-                    : AppColors.textSecondary;
-                final Color labelColor = item.isActive
-                    ? AppColors.primaryBlueDark
-                    : AppColors.textSecondary;
-
-                return InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => onItemTap(index),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: item.isActive
-                          ? const Color(0xFFEAF3FF)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compact ? 10 : 12,
-                        vertical: compact ? 10 : 11,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: compact
-                            ? MainAxisAlignment.center
-                            : MainAxisAlignment.start,
-                        children: [
-                          Icon(
-                            item.icon,
-                            size: compact ? 18 : 20,
-                            color: iconColor,
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => onItemTap(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 10 : 12,
+                          vertical: compact ? 12 : 13,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: isActive
+                              ? const LinearGradient(
+                                  colors: <Color>[
+                                    AppColors.primaryBlueDark,
+                                    AppColors.primaryBlue,
+                                  ],
+                                )
+                              : null,
+                          color: isActive
+                              ? null
+                              : Colors.white.withValues(alpha: 0.58),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: isActive
+                                ? const Color(0x00000000)
+                                : AppColors.border,
                           ),
-                          if (!compact) ...[
-                            const SizedBox(width: 10),
-                            Flexible(
-                              child: Text(
-                                item.label,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      fontSize: 13,
-                                      color: labelColor,
-                                      fontWeight: item.isActive
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                    ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: compact
+                              ? MainAxisAlignment.center
+                              : MainAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: compact ? 34 : 36,
+                              height: compact ? 34 : 36,
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? Colors.white.withValues(alpha: 0.14)
+                                    : const Color(0xFFF4F8FC),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                item.icon,
+                                size: compact ? 18 : 20,
+                                color: iconColor,
                               ),
                             ),
+                            if (!compact) ...[
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  item.label,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        fontSize: 13,
+                                        color: labelColor,
+                                        fontWeight: isActive
+                                            ? FontWeight.w700
+                                            : FontWeight.w600,
+                                      ),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

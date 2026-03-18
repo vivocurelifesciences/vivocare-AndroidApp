@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:vivocare/core/auth/auth_storage.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/network/network_client.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/network/network_response.dart';
-import 'package:vivocare/features/auth/view/widgets/swipe_action_tile.dart';
+import 'package:vivocure/core/auth/auth_storage.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/network/network_client.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/widgets/app_page_backdrop.dart';
+import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
 
 enum _DoctorActionMode { add, edit }
 
@@ -54,6 +55,8 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _potentialController = TextEditingController();
   final TextEditingController _supportValueController = TextEditingController();
+  final TextEditingController _expectedSupportValueController =
+      TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
@@ -72,6 +75,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   bool _isSubmitting = false;
   bool _isActionInProgress = false;
   bool _isLoadingDoctors = false;
+  bool _showValidationErrors = false;
   List<_DoctorRecord> _doctorRecords = <_DoctorRecord>[];
   _DoctorRecord? _selectedDoctor;
   String? _selectedQualification;
@@ -96,6 +100,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _lastNameController.dispose();
     _potentialController.dispose();
     _supportValueController.dispose();
+    _expectedSupportValueController.dispose();
     _phoneController.dispose();
     _stateController.dispose();
     _cityController.dispose();
@@ -120,6 +125,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     setState(() {
       _mode = mode;
       _selectedDoctor = null;
+      _showValidationErrors = false;
       _searchController.clear();
       _doctorRecords = mode == _DoctorActionMode.add
           ? _doctorRecords
@@ -163,35 +169,78 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     return '${date.year}-$month-$day';
   }
 
-  String? _validateNumber(String? value) {
+  String? _validateRequired(String? value, {required String fieldLabel}) {
     if (value == null || value.trim().isEmpty) {
-      return null;
-    }
-    if (double.tryParse(value.trim()) == null) {
-      return 'Enter a valid number.';
+      return '$fieldLabel is required.';
     }
     return null;
   }
 
-  String? _validateInteger(String? value) {
+  String? _validateOptionalPhone(String? value) {
+    final String trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final String normalized = trimmed.replaceAll(RegExp(r'\s+'), '');
+    if (!RegExp(r'^[0-9]{10,15}$').hasMatch(normalized)) {
+      return 'Enter a valid phone number.';
+    }
+    return null;
+  }
+
+  String? _validateDate(
+    String? value, {
+    required String fieldLabel,
+    bool required = false,
+  }) {
+    final String trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return required ? '$fieldLabel is required.' : null;
+    }
+    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(trimmed)) {
+      return 'Use YYYY-MM-DD format.';
+    }
+    if (DateTime.tryParse(trimmed) == null) {
+      return 'Enter a valid $fieldLabel.';
+    }
+    return null;
+  }
+
+  String? _validateNonNegativeInteger(
+    String? value, {
+    required String fieldLabel,
+  }) {
     if (value == null || value.trim().isEmpty) {
       return null;
     }
-    if (int.tryParse(value.trim()) == null) {
-      return 'Enter a valid integer.';
+    final int? parsed = int.tryParse(value.trim());
+    if (parsed == null) {
+      return 'Enter a valid $fieldLabel.';
+    }
+    if (parsed < 0) {
+      return '$fieldLabel cannot be negative.';
     }
     return null;
   }
 
   Future<void> _submit() async {
     final FormState? form = _formKey.currentState;
-    if (form == null || !form.validate()) {
+    if (form == null) {
+      return;
+    }
+    if (!form.validate()) {
+      setState(() {
+        _showValidationErrors = true;
+      });
+      _scrollToForm();
       return;
     }
 
     if (_mode == _DoctorActionMode.edit && _selectedDoctor == null) {
-      _showCenterMessage('Swipe left on a doctor and tap Edit first.',
-          isError: true);
+      _showCenterMessage(
+        'Swipe left on a doctor and tap Edit first.',
+        isError: true,
+      );
       return;
     }
 
@@ -227,7 +276,10 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     final NetworkResponse<dynamic> response = await _networkClient.post(
       '${ApiConfig.apiVersionPath}/doctors',
       headers: _authHeaders(session),
-      body: _buildDoctorRequestBody(includeStatus: false),
+      body: _buildDoctorRequestBody(
+        includeStatus: false,
+        omitEmptyFields: true,
+      ),
     );
 
     if (!mounted) {
@@ -491,6 +543,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _lastNameController.text = doctor.lastName;
     _potentialController.text = doctor.potential;
     _supportValueController.text = doctor.supportValue;
+    _expectedSupportValueController.text = doctor.expectedSupportValue;
     _phoneController.text = doctor.phone;
     _stateController.text = doctor.state;
     _cityController.text = doctor.city;
@@ -517,6 +570,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _lastNameController.clear();
     _potentialController.clear();
     _supportValueController.clear();
+    _expectedSupportValueController.clear();
     _phoneController.clear();
     _stateController.clear();
     _cityController.clear();
@@ -529,30 +583,41 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _selectedQualification = null;
     _selectedSpeciality = null;
     _selectedCategory = null;
+    _showValidationErrors = false;
   }
 
-  Map<String, dynamic> _buildDoctorRequestBody({required bool includeStatus}) {
+  Map<String, dynamic> _buildDoctorRequestBody({
+    required bool includeStatus,
+    bool omitEmptyFields = false,
+  }) {
     final Map<String, dynamic> body = <String, dynamic>{
-      'first_name': _nullIfEmpty(_firstNameController.text),
-      'middle_name': _nullIfEmpty(_middleNameController.text),
-      'last_name': _nullIfEmpty(_lastNameController.text),
-      'qualification': _selectedQualification,
-      'speciality': _selectedSpeciality,
-      'category': _selectedCategory,
-      'potential': _doubleOrNull(_potentialController.text),
-      'support_value': _doubleOrNull(_supportValueController.text),
-      'phone': _nullIfEmpty(_phoneController.text),
-      'state': _nullIfEmpty(_stateController.text),
-      'city': _nullIfEmpty(_cityController.text),
-      'area': _nullIfEmpty(_areaController.text),
-      'country': _nullIfEmpty(_countryController.text),
-      'dob': _nullIfEmpty(_dobController.text),
-      'dom': _nullIfEmpty(_domController.text),
-      'experience_years': _intOrNull(_experienceYearsController.text),
+      'first_name': _textOrEmpty(_firstNameController.text),
+      'middle_name': _textOrEmpty(_middleNameController.text),
+      'last_name': _textOrEmpty(_lastNameController.text),
+      'qualification': _selectedQualification ?? '',
+      'speciality': _selectedSpeciality ?? '',
+      'category': _selectedCategory ?? '',
+      'potential': _intOrEmpty(_potentialController.text),
+      'support_value': _intOrEmpty(_supportValueController.text),
+      'expected_support_value': _intOrEmpty(
+        _expectedSupportValueController.text,
+      ),
+      'phone': _textOrEmpty(_phoneController.text),
+      'state': _textOrEmpty(_stateController.text),
+      'city': _textOrEmpty(_cityController.text),
+      'area': _textOrEmpty(_areaController.text),
+      'country': _textOrEmpty(_countryController.text),
+      'dob': _textOrEmpty(_dobController.text),
+      'dom': _textOrEmpty(_domController.text),
+      'experience_years': _intOrEmpty(_experienceYearsController.text),
     };
 
     if (includeStatus) {
-      body['status'] = _nullIfEmpty(_statusController.text);
+      body['status'] = _textOrEmpty(_statusController.text);
+    }
+
+    if (omitEmptyFields) {
+      body.removeWhere((String key, dynamic value) => value == '');
     }
 
     return body;
@@ -562,9 +627,8 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     return <String, String>{'Authorization': session.authorizationHeader};
   }
 
-  String? _nullIfEmpty(String value) {
-    final String trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
+  String _textOrEmpty(String value) {
+    return value.trim();
   }
 
   String? _normalizeOption(String value, List<String> options) {
@@ -575,20 +639,12 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     return null;
   }
 
-  double? _doubleOrNull(String value) {
+  Object _intOrEmpty(String value) {
     final String trimmed = value.trim();
     if (trimmed.isEmpty) {
-      return null;
+      return '';
     }
-    return double.tryParse(trimmed);
-  }
-
-  int? _intOrNull(String value) {
-    final String trimmed = value.trim();
-    if (trimmed.isEmpty) {
-      return null;
-    }
-    return int.tryParse(trimmed);
+    return int.tryParse(trimmed) ?? trimmed;
   }
 
   String? _extractResponseMessage(dynamic data) {
@@ -634,10 +690,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     });
   }
 
-  Widget _buildSurface({
-    required Widget child,
-    Key? key,
-  }) {
+  Widget _buildSurface({required Widget child, Key? key}) {
     return DecoratedBox(
       key: key,
       decoration: BoxDecoration(
@@ -652,10 +705,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }
 
@@ -675,10 +725,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
           const SizedBox(height: 6),
           const Text(
             'Swipe left on any doctor row to reveal Edit and Delete.',
-            style: TextStyle(
-              fontSize: 13,
-              color: Color(0xFF6C7A89),
-            ),
+            style: TextStyle(fontSize: 13, color: Color(0xFF6C7A89)),
           ),
           const SizedBox(height: 16),
           Row(
@@ -734,6 +781,14 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
+                SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Expected SV',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
               ],
             ),
           ),
@@ -754,69 +809,80 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               child: const Text(
                 'No doctors found.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF6C7A89),
-                ),
+                style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
               ),
             )
           else
             Column(
-              children: _doctorRecords.map((_DoctorRecord doctor) {
-                final bool isSelected = _selectedDoctor?.id == doctor.id;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: SwipeActionTile(
-                    onEdit: () => _handleEditDoctor(doctor),
-                    onDelete: () => _handleDeleteDoctor(doctor),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFFEAF4FF)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: isSelected
-                              ? const Color(0xFF1E88E5)
-                              : const Color(0xFFDCE6F0),
+              children: _doctorRecords
+                  .map((_DoctorRecord doctor) {
+                    final bool isSelected = _selectedDoctor?.id == doctor.id;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: SwipeActionTile(
+                        onEdit: () => _handleEditDoctor(doctor),
+                        onDelete: () => _handleDeleteDoctor(doctor),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFEAF4FF)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF1E88E5)
+                                  : const Color(0xFFDCE6F0),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 4,
+                                child: Text(
+                                  doctor.fullName,
+                                  style: TextStyle(
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w600,
+                                    color: const Color(0xFF1D3557),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  doctor.doctorCode.isEmpty
+                                      ? '-'
+                                      : doctor.doctorCode,
+                                  style: const TextStyle(
+                                    color: Color(0xFF52606D),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  doctor.expectedSupportValue.isEmpty
+                                      ? '-'
+                                      : doctor.expectedSupportValue,
+                                  style: const TextStyle(
+                                    color: Color(0xFF52606D),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Text(
-                              doctor.fullName,
-                              style: TextStyle(
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: const Color(0xFF1D3557),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              doctor.doctorCode.isEmpty
-                                  ? '-'
-                                  : doctor.doctorCode,
-                              style: const TextStyle(
-                                color: Color(0xFF52606D),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(growable: false),
+                    );
+                  })
+                  .toList(growable: false),
             ),
         ],
       ),
@@ -831,6 +897,9 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       key: _formSectionKey,
       child: Form(
         key: _formKey,
+        autovalidateMode: _showValidationErrors
+            ? AutovalidateMode.onUserInteraction
+            : AutovalidateMode.disabled,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -847,10 +916,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               isEditMode
                   ? 'Choose a doctor from the list above, then update the fields below.'
                   : 'Fill the doctor details and save them to the API.',
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF6C7A89),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6C7A89)),
             ),
             if (isEditMode && _selectedDoctor != null) ...[
               const SizedBox(height: 14),
@@ -882,16 +948,15 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                 child: const Text(
                   'No doctor selected yet. Swipe left on a row above and tap Edit.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF6C7A89),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
                 ),
               )
             else ...[
               _FormTextField(
                 controller: _firstNameController,
-                label: 'First Name',
+                label: 'First Name *',
+                validator: (String? value) =>
+                    _validateRequired(value, fieldLabel: 'First name'),
               ),
               _FormTextField(
                 controller: _middleNameController,
@@ -967,62 +1032,62 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               _FormTextField(
                 controller: _potentialController,
                 label: 'Potential',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                validator: _validateNumber,
+                keyboardType: TextInputType.number,
+                validator: (String? value) =>
+                    _validateNonNegativeInteger(value, fieldLabel: 'Potential'),
               ),
               _FormTextField(
                 controller: _supportValueController,
                 label: 'Support Value',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+                keyboardType: TextInputType.number,
+                validator: (String? value) => _validateNonNegativeInteger(
+                  value,
+                  fieldLabel: 'Support value',
                 ),
-                validator: _validateNumber,
+              ),
+              _FormTextField(
+                controller: _expectedSupportValueController,
+                label: 'Expected Support Value',
+                keyboardType: TextInputType.number,
+                validator: (String? value) => _validateNonNegativeInteger(
+                  value,
+                  fieldLabel: 'Expected support value',
+                ),
               ),
               _FormTextField(
                 controller: _phoneController,
                 label: 'Phone',
                 keyboardType: TextInputType.phone,
+                validator: _validateOptionalPhone,
               ),
-              _FormTextField(
-                controller: _stateController,
-                label: 'State',
-              ),
-              _FormTextField(
-                controller: _cityController,
-                label: 'City',
-              ),
-              _FormTextField(
-                controller: _areaController,
-                label: 'Area',
-              ),
-              _FormTextField(
-                controller: _countryController,
-                label: 'Country',
-              ),
+              _FormTextField(controller: _stateController, label: 'State'),
+              _FormTextField(controller: _cityController, label: 'City'),
+              _FormTextField(controller: _areaController, label: 'Area'),
+              _FormTextField(controller: _countryController, label: 'Country'),
               _DateField(
                 controller: _dobController,
                 label: 'DOB (YYYY-MM-DD)',
                 onTap: () => _pickDate(_dobController),
+                validator: (String? value) =>
+                    _validateDate(value, fieldLabel: 'DOB'),
               ),
               _DateField(
                 controller: _domController,
                 label: 'DOM (YYYY-MM-DD)',
                 onTap: () => _pickDate(_domController),
+                validator: (String? value) =>
+                    _validateDate(value, fieldLabel: 'DOM'),
               ),
               _FormTextField(
                 controller: _experienceYearsController,
                 label: 'Experience Years',
                 keyboardType: TextInputType.number,
-                validator: _validateInteger,
-              ),
-              if (isEditMode)
-                _FormTextField(
-                  controller: _statusController,
-                  label: 'Status',
+                validator: (String? value) => _validateNonNegativeInteger(
+                  value,
+                  fieldLabel: 'Experience years',
                 ),
-              const SizedBox(height: 16),
+              ),
+              if (isEditMode) const SizedBox(height: 16),
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
@@ -1033,9 +1098,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                           width: 18,
                           child: CircularProgressIndicator(strokeWidth: 2.2),
                         )
-                      : Text(
-                          isEditMode ? 'Update Doctor' : 'Save Doctor',
-                        ),
+                      : Text(isEditMode ? 'Update Doctor' : 'Save Doctor'),
                 ),
               ),
             ],
@@ -1049,94 +1112,97 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Doctor')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Stack(
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 920),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildSurface(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _ModeButton(
-                                label: 'Add Doctor',
-                                isActive: _mode == _DoctorActionMode.add,
-                                onTap: () => _switchMode(_DoctorActionMode.add),
+      body: AppPageBackdrop(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Stack(
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 920),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSurface(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _ModeButton(
+                                  label: 'Add Doctor',
+                                  isActive: _mode == _DoctorActionMode.add,
+                                  onTap: () =>
+                                      _switchMode(_DoctorActionMode.add),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _ModeButton(
-                                label: 'Edit Doctor',
-                                isActive: _mode == _DoctorActionMode.edit,
-                                onTap: () =>
-                                    _switchMode(_DoctorActionMode.edit),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _ModeButton(
+                                  label: 'Edit Doctor',
+                                  isActive: _mode == _DoctorActionMode.edit,
+                                  onTap: () =>
+                                      _switchMode(_DoctorActionMode.edit),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      if (_mode == _DoctorActionMode.edit) ...[
+                        if (_mode == _DoctorActionMode.edit) ...[
+                          const SizedBox(height: 16),
+                          _buildDoctorListCard(),
+                        ],
                         const SizedBox(height: 16),
-                        _buildDoctorListCard(),
+                        _buildFormCard(),
                       ],
-                      const SizedBox(height: 16),
-                      _buildFormCard(),
-                    ],
-                  ),
-                ),
-              ),
-              if (_isBusy)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      child: const Center(child: CircularProgressIndicator()),
                     ),
                   ),
                 ),
-              if (_centerMessage != null)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _isCenterMessageError
-                                ? const Color(0xFFFFF2F2)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
+                if (_isBusy)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+                  ),
+                if (_centerMessage != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
                               color: _isCenterMessageError
-                                  ? const Color(0xFFFFC9C9)
-                                  : const Color(0xFFE3EAF3),
+                                  ? const Color(0xFFFFF2F2)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _isCenterMessageError
+                                    ? const Color(0xFFFFC9C9)
+                                    : const Color(0xFFE3EAF3),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            _centerMessage!,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                            child: Text(
+                              _centerMessage!,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1168,10 +1234,7 @@ class _ModeButton extends StatelessWidget {
           foregroundColor: isActive ? Colors.white : colorScheme.primary,
           side: BorderSide(color: colorScheme.primary),
         ),
-        child: Text(
-          label,
-          overflow: TextOverflow.ellipsis,
-        ),
+        child: Text(label, overflow: TextOverflow.ellipsis),
       ),
     );
   }
@@ -1209,11 +1272,13 @@ class _DateField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.onTap,
+    this.validator,
   });
 
   final TextEditingController controller;
   final String label;
   final VoidCallback onTap;
+  final String? Function(String?)? validator;
 
   @override
   Widget build(BuildContext context) {
@@ -1223,6 +1288,7 @@ class _DateField extends StatelessWidget {
         controller: controller,
         readOnly: true,
         onTap: onTap,
+        validator: validator,
         decoration: InputDecoration(
           labelText: label,
           suffixIcon: IconButton(
@@ -1247,6 +1313,7 @@ class _DoctorRecord {
     required this.category,
     required this.potential,
     required this.supportValue,
+    required this.expectedSupportValue,
     required this.phone,
     required this.state,
     required this.city,
@@ -1268,6 +1335,7 @@ class _DoctorRecord {
   final String category;
   final String potential;
   final String supportValue;
+  final String expectedSupportValue;
   final String phone;
   final String state;
   final String city;
@@ -1279,10 +1347,11 @@ class _DoctorRecord {
   final String status;
 
   String get fullName {
-    final String combined = <String>[firstName, middleName, lastName]
-        .where((String value) => value.trim().isNotEmpty)
-        .join(' ')
-        .trim();
+    final String combined = <String>[
+      firstName,
+      middleName,
+      lastName,
+    ].where((String value) => value.trim().isNotEmpty).join(' ').trim();
     return combined.isEmpty ? 'Unnamed Doctor' : combined;
   }
 
@@ -1305,6 +1374,7 @@ class _DoctorRecord {
       category: _asString(json['category']),
       potential: _asString(json['potential']),
       supportValue: _asString(json['support_value']),
+      expectedSupportValue: _asString(json['expected_support_value']),
       phone: _asString(json['phone']),
       state: _asString(json['state']),
       city: _asString(json['city']),

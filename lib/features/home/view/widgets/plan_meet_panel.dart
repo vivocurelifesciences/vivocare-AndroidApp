@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/theme/app_colors.dart';
-import 'package:vivocare/features/home/view_model/home_view_model.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/theme/app_colors.dart';
+import 'package:vivocure/core/widgets/app_panel.dart';
+import 'package:vivocure/features/home/view/dcr_list_screen.dart';
+import 'package:vivocure/features/home/view_model/home_view_model.dart';
 
 class PlanMeetPanel extends StatelessWidget {
   const PlanMeetPanel({
@@ -19,15 +21,6 @@ class PlanMeetPanel extends StatelessWidget {
     BuildContext context,
     PlanMeetEntry entry,
   ) async {
-    if (!entry.isDoctor) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Doctor details are available for doctors.'),
-        ),
-      );
-      return;
-    }
-
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -35,8 +28,10 @@ class PlanMeetPanel extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) =>
-          _DoctorDetailsSheet(doctorName: entry.name, viewModel: viewModel),
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: _CustomerDetailsSheet(entry: entry, viewModel: viewModel),
+      ),
     );
   }
 
@@ -54,59 +49,124 @@ class PlanMeetPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  'Plan & Meet',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.end,
-                children: [
-                  SizedBox(
-                    height: 38,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final String? message = await showDialog<String>(
-                          context: context,
-                          builder: (_) =>
-                              _PlanMeetAddDialog(viewModel: viewModel),
-                        );
-                        if (context.mounted && message != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(message)),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add'),
+          AppPanel(
+            padding: const EdgeInsets.all(22),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[Color(0xFFF8FBFF), Color(0xFFEAF4FF)],
+            ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final Widget headerText = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppColors.borderStrong),
+                      ),
+                      child: Text(
+                        'Daily Planning',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.primaryBlueDark,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
-                  ),
-                  SizedBox(
-                    height: 38,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        await showDialog<void>(
-                          context: context,
-                          builder: (_) =>
-                              _CreateDcrDialog(viewModel: viewModel),
-                        );
-                      },
-                      icon: const Icon(Icons.description_outlined, size: 18),
-                      label: const Text('Create DCR'),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Plan & Meet',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontSize: 24, fontWeight: FontWeight.w700),
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Build daily doctor and chemist plans, then review DCR activity from the same workspace.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                );
+
+                final Widget headerActions = SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 40,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                          onPressed: () async {
+                            final String? message = await showDialog<String>(
+                              context: context,
+                              builder: (_) =>
+                                  _PlanMeetAddDialog(viewModel: viewModel),
+                            );
+                            if (context.mounted && message != null) {
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text(message)));
+                            }
+                          },
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 40,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                          onPressed: () async {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    DcrListScreen(viewModel: viewModel),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.description_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Create DCR'),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                );
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    headerText,
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: constraints.maxWidth < 760
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
+                      child: headerActions,
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
           const SizedBox(height: 16),
           Text(
@@ -141,30 +201,6 @@ class PlanMeetPanel extends StatelessWidget {
                 );
               },
             ),
-          const SizedBox(height: 20),
-          Text(
-            'DCR Entries',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (viewModel.dcrEntries.isEmpty)
-            const _EmptySectionCard(
-              message: 'No DCR created yet. Tap Create DCR to add one.',
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: viewModel.dcrEntries.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (BuildContext context, int index) {
-                final DcrEntry entry = viewModel.dcrEntries[index];
-                return _DcrEntryCard(entry: entry, viewModel: viewModel);
-              },
-            ),
         ],
       ),
     );
@@ -178,14 +214,7 @@ class _EmptySectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Padding(padding: const EdgeInsets.all(20), child: Text(message)),
-    );
+    return AppPanel(child: Text(message));
   }
 }
 
@@ -202,89 +231,94 @@ class _PlanEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final CustomerProfile profile = viewModel.getCustomerProfileForEntry(entry);
+
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(22),
       onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
+      child: AppPanel(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: entry.isDoctor
+                    ? const Color(0xFFE8F6FA)
+                    : const Color(0xFFFFF5E8),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                entry.typeLabel,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
                 ),
-                decoration: BoxDecoration(
-                  color: entry.isDoctor
-                      ? const Color(0xFFE8F6FA)
-                      : const Color(0xFFFFF5E8),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  entry.typeLabel,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.name,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.name,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                  const SizedBox(height: 4),
+                  Text(
+                    '${entry.typeLabel}'
+                    '${profile.code.isEmpty ? '' : ' • ${profile.code}'}'
+                    ' • ${viewModel.formatShortDate(entry.visitDate)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _MetricPill(
+                        label: 'Potential',
+                        value: _displayValue(profile.potential),
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Date: ${viewModel.formatShortDate(entry.visitDate)}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+                      _MetricPill(
+                        label: 'Support',
+                        value: _displayValue(profile.supportValue),
                       ),
-                    ),
-                  ],
-                ),
+                      _MetricPill(
+                        label: 'Expected',
+                        value: _displayValue(profile.expectedSupportValue),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textSecondary,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textSecondary,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _DoctorDetailsSheet extends StatefulWidget {
-  const _DoctorDetailsSheet({
-    required this.doctorName,
-    required this.viewModel,
-  });
+class _CustomerDetailsSheet extends StatefulWidget {
+  const _CustomerDetailsSheet({required this.entry, required this.viewModel});
 
-  final String doctorName;
+  final PlanMeetEntry entry;
   final HomeViewModel viewModel;
 
   @override
-  State<_DoctorDetailsSheet> createState() => _DoctorDetailsSheetState();
+  State<_CustomerDetailsSheet> createState() => _CustomerDetailsSheetState();
 }
 
-class _DoctorDetailsSheetState extends State<_DoctorDetailsSheet> {
+class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
   final Set<String> _selectedMedicineIds = <String>{};
 
   List<MedicinePresentation> get _selectedMedicines {
@@ -313,9 +347,9 @@ class _DoctorDetailsSheetState extends State<_DoctorDetailsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final DoctorProfile doctor = widget.viewModel.getDoctorProfile(
-      widget.doctorName,
-    );
+    final CustomerProfile customer = widget.viewModel
+        .getCustomerProfileForEntry(widget.entry);
+    final String typeLabel = widget.entry.typeLabel;
 
     return SafeArea(
       child: Padding(
@@ -323,134 +357,224 @@ class _DoctorDetailsSheetState extends State<_DoctorDetailsSheet> {
           left: 16,
           top: 16,
           right: 16,
-          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+          bottom:
+              16 +
+              MediaQuery.of(context).viewInsets.bottom +
+              MediaQuery.of(context).padding.bottom,
         ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Doctor Full Details',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$typeLabel Full Details',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      customer.name,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              Text(
-                doctor.name,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _DetailLine(label: 'Qualification', value: doctor.qualification),
-              _DetailLine(label: 'Speciality', value: doctor.speciality),
-              _DetailLine(label: 'Phone', value: doctor.phone),
-              _DetailLine(label: 'Area', value: doctor.area),
-              _DetailLine(label: 'City', value: doctor.city),
-              const SizedBox(height: 14),
-              if (widget.viewModel.medicinePresentations.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7FAFD),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Text(
-                    'No products available yet. Product images are loaded from local cache after login.',
-                  ),
-                )
-              else ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Selected Products (${_selectedMedicines.length})',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                    if (customer.code.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '$typeLabel Code: ${customer.code}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
+                    ],
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _MetricPill(
+                          label: 'Potential',
+                          value: _displayValue(customer.potential),
+                        ),
+                        _MetricPill(
+                          label: 'Support',
+                          value: _displayValue(customer.supportValue),
+                        ),
+                        _MetricPill(
+                          label: 'Expected',
+                          value: _displayValue(customer.expectedSupportValue),
+                        ),
+                      ],
                     ),
-                    OutlinedButton.icon(
-                      onPressed: _openMedicineSelector,
-                      icon: const Icon(Icons.medication_outlined, size: 18),
-                      label: const Text('Select Medicine'),
+                    const SizedBox(height: 14),
+                    if (widget.entry.isDoctor) ...[
+                      _DetailLine(
+                        label: 'Qualification',
+                        value: _displayValue(customer.qualification),
+                      ),
+                      _DetailLine(
+                        label: 'Speciality',
+                        value: _displayValue(customer.speciality),
+                      ),
+                    ] else ...[
+                      _DetailLine(
+                        label: 'Email',
+                        value: _displayValue(customer.email),
+                      ),
+                      _DetailLine(
+                        label: 'Contact Person',
+                        value: _displayValue(customer.contactPersonName),
+                      ),
+                      _DetailLine(
+                        label: 'Contact Email',
+                        value: _displayValue(customer.contactPersonEmail),
+                      ),
+                    ],
+                    _DetailLine(
+                      label: 'Phone',
+                      value: _displayValue(customer.phone),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (_selectedMedicines.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7FAFD),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
+                    _DetailLine(
+                      label: 'Area',
+                      value: _displayValue(customer.area),
                     ),
-                    child: const Text(
-                      'Select one or more products to view the slideshow.',
+                    _DetailLine(
+                      label: 'City',
+                      value: _displayValue(customer.city),
                     ),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _selectedMedicines
-                        .map(
-                          (MedicinePresentation item) => Chip(
-                            label: Text(
-                              item.code.isEmpty
-                                  ? item.name
-                                  : '${item.name} (${item.code})',
+                    _DetailLine(
+                      label: 'State',
+                      value: _displayValue(customer.state),
+                    ),
+                    _DetailLine(
+                      label: 'Country',
+                      value: _displayValue(customer.country),
+                    ),
+                    const SizedBox(height: 14),
+                    if (widget.viewModel.medicinePresentations.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF7FAFD),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: const Text(
+                          'No products available yet. Product images are loaded from local cache after login.',
+                        ),
+                      )
+                    else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Selected Products (${_selectedMedicines.length})',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                             ),
-                            onDeleted: () {
-                              setState(() {
-                                _selectedMedicineIds.remove(item.id);
-                              });
-                            },
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _openMedicineSelector,
+                            icon: const Icon(
+                              Icons.medication_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Select Product'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (_selectedMedicines.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF7FAFD),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: const Text(
+                            'Select one or more products to view the presentation.',
                           ),
                         )
-                        .toList(growable: false),
-                  ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    onPressed: _selectedMedicines.isEmpty
-                        ? null
-                        : () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => _MedicinePresentationScreen(
-                                  presentations: _selectedMedicines,
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _selectedMedicines
+                              .map(
+                                (MedicinePresentation item) => Chip(
+                                  label: Text(
+                                    item.code.isEmpty
+                                        ? item.name
+                                        : '${item.name} (${item.code})',
+                                  ),
+                                  onDeleted: () {
+                                    setState(() {
+                                      _selectedMedicineIds.remove(item.id);
+                                    });
+                                  },
                                 ),
-                              ),
-                            );
-                          },
-                    icon: const Icon(Icons.slideshow_outlined),
-                    label: const Text('View Presentation'),
-                  ),
+                              )
+                              .toList(growable: false),
+                        ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton.icon(
+                onPressed: _selectedMedicines.isEmpty
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _MedicinePresentationScreen(
+                              presentations: _selectedMedicines,
+                            ),
+                          ),
+                        );
+                      },
+                icon: const Icon(Icons.slideshow_outlined),
+                label: const Text('View Presentation'),
+              ),
+            ),
+            if (_selectedMedicineIds.isEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Select at least one product to view the presentation.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -486,6 +610,32 @@ class _DetailLine extends StatelessWidget {
   }
 }
 
+class _MetricPill extends StatelessWidget {
+  const _MetricPill({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6FAFE),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
 class _MedicinePresentationScreen extends StatefulWidget {
   const _MedicinePresentationScreen({required this.presentations});
 
@@ -499,11 +649,12 @@ class _MedicinePresentationScreen extends StatefulWidget {
 class _MedicinePresentationScreenState
     extends State<_MedicinePresentationScreen> {
   int _activeSlideIndex = 0;
+  late final PageController _pageController;
 
   List<_PresentationSlide> get _slides => <_PresentationSlide>[
     const _PresentationSlide(
       title: 'Vivocure',
-      assetPath: 'assets/images/vivocare_logo.jpeg',
+      assetPath: 'assets/images/vivocure_logo.jpeg',
     ),
     ...widget.presentations.map(
       (MedicinePresentation item) => _PresentationSlide(
@@ -515,52 +666,107 @@ class _MedicinePresentationScreenState
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _goToSlide(int index) {
+    if (index < 0 || index >= _slides.length) {
+      return;
+    }
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final _PresentationSlide activeSlide = _slides[_activeSlideIndex];
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF050B14),
       body: Stack(
         children: [
-          _buildSlideshowView(context),
+          Positioned.fill(child: _buildSlideshowView()),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Column(
                 children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    ),
+                  Row(
+                    children: [
+                      _PresentationActionButton(
+                        icon: Icons.arrow_back_rounded,
+                        onTap: () => Navigator.of(context).pop(),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.44),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.16),
+                          ),
+                        ),
+                        child: Text(
+                          '${_activeSlideIndex + 1}/${_slides.length}',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        activeSlide.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
+                  const Spacer(),
+                  if (_slides.length > 1)
+                    Row(
+                      children: [
+                        _PresentationActionButton(
+                          icon: Icons.chevron_left_rounded,
+                          onTap: () => _goToSlide(_activeSlideIndex - 1),
+                        ),
+                        const Spacer(),
+                        _PresentationActionButton(
+                          icon: Icons.chevron_right_rounded,
+                          onTap: () => _goToSlide(_activeSlideIndex + 1),
+                        ),
+                      ],
                     ),
-                  ),
+                  const SizedBox(height: 18),
+                  if (_slides.length > 1)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List<Widget>.generate(_slides.length, (
+                        int index,
+                      ) {
+                        final bool isActive = index == _activeSlideIndex;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          width: isActive ? 22 : 8,
+                          height: 8,
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.38),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        );
+                      }),
+                    ),
                 ],
               ),
             ),
@@ -570,83 +776,98 @@ class _MedicinePresentationScreenState
     );
   }
 
-  Widget _buildSlideshowView(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: PageView.builder(
-            itemCount: _slides.length,
-            onPageChanged: (int index) {
-              setState(() {
-                _activeSlideIndex = index;
-              });
-            },
-            itemBuilder: (BuildContext context, int index) {
-              final _PresentationSlide slide = _slides[index];
-              return InteractiveViewer(
-                minScale: 1,
-                maxScale: 4,
-                child: Center(
-                  child: _buildSlideImage(slide),
-                ),
-              );
-            },
-          ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List<Widget>.generate(_slides.length, (
-                int index,
-              ) {
-                final bool isActive = _activeSlideIndex == index;
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: isActive ? 18 : 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? AppColors.primaryBlue
-                        : AppColors.textSecondary.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                );
-              }),
-            ),
-          ),
-        ),
-      ],
+  Widget _buildSlideshowView() {
+    return PageView.builder(
+      controller: _pageController,
+      itemCount: _slides.length,
+      onPageChanged: (int index) {
+        setState(() {
+          _activeSlideIndex = index;
+        });
+      },
+      itemBuilder: (BuildContext context, int index) {
+        final _PresentationSlide slide = _slides[index];
+        return ColoredBox(
+          color: const Color(0xFF050B14),
+          child: _buildSlideImage(slide),
+        );
+      },
     );
   }
+}
 
+class _PresentationActionButton extends StatelessWidget {
+  const _PresentationActionButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: IconButton(
+        onPressed: onTap,
+        icon: Icon(icon, color: Colors.white),
+      ),
+    );
+  }
+}
+
+extension on _MedicinePresentationScreenState {
   Widget _buildSlideImage(_PresentationSlide slide) {
     if (slide.assetPath.isNotEmpty) {
-      return Image.asset(
-        slide.assetPath,
-        fit: BoxFit.contain,
-        width: double.infinity,
+      return SizedBox.expand(
+        child: Image.asset(
+          slide.assetPath,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
       );
     }
 
     if (slide.localImagePath.isNotEmpty &&
         File(slide.localImagePath).existsSync()) {
-      return Image.file(
-        File(slide.localImagePath),
-        fit: BoxFit.contain,
-        width: double.infinity,
+      return SizedBox.expand(
+        child: Image.file(
+          File(slide.localImagePath),
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
       );
     }
 
     if (slide.imageUrl.isNotEmpty) {
-      return Image.network(
-        slide.imageUrl,
-        fit: BoxFit.contain,
-        width: double.infinity,
-        errorBuilder: (_, _, _) => _buildSlideFallback(slide.title),
+      return SizedBox.expand(
+        child: Image.network(
+          slide.imageUrl,
+          fit: BoxFit.contain,
+          loadingBuilder:
+              (
+                BuildContext context,
+                Widget child,
+                ImageChunkEvent? loadingProgress,
+              ) {
+                if (loadingProgress == null) {
+                  return child;
+                }
+                return const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                );
+              },
+          errorBuilder: (_, _, _) => _buildSlideFallback(slide.title),
+        ),
       );
     }
 
@@ -723,10 +944,12 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
       return widget.products;
     }
 
-    return widget.products.where((MedicinePresentation item) {
-      return item.name.toLowerCase().contains(normalizedQuery) ||
-          item.code.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    return widget.products
+        .where((MedicinePresentation item) {
+          return item.name.toLowerCase().contains(normalizedQuery) ||
+              item.code.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
   }
 
   void _toggleSelection(String productId) {
@@ -796,7 +1019,8 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
                       itemCount: _filteredProducts.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (BuildContext context, int index) {
-                        final MedicinePresentation item = _filteredProducts[index];
+                        final MedicinePresentation item =
+                            _filteredProducts[index];
                         final bool isSelected = _selectedIds.contains(item.id);
                         return ListTile(
                           shape: RoundedRectangleBorder(
@@ -844,134 +1068,6 @@ class _PresentationSlide {
   final String assetPath;
   final String localImagePath;
   final String imageUrl;
-}
-
-class _DcrEntryCard extends StatelessWidget {
-  const _DcrEntryCard({required this.entry, required this.viewModel});
-
-  final DcrEntry entry;
-  final HomeViewModel viewModel;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.calendar_month_outlined,
-                  size: 18,
-                  color: AppColors.primaryBlueDark,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  viewModel.formatDcrDropdownDate(entry.dcrDate),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Doctors: ${entry.doctorNames.length} | Chemists: ${entry.chemistNames.length}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (entry.doctorNames.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Doctors',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 12,
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: entry.doctorNames
-                    .map<Widget>(
-                      (String name) => Chip(
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor: const Color(0xFFE8F6FA),
-                        side: const BorderSide(color: AppColors.border),
-                        label: Text(
-                          name,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                fontSize: 12,
-                                color: AppColors.textPrimary,
-                              ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-            if (entry.chemistNames.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Chemists',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 12,
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: entry.chemistNames
-                    .map<Widget>(
-                      (String name) => Chip(
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor: const Color(0xFFFFF5E8),
-                        side: const BorderSide(color: AppColors.border),
-                        label: Text(
-                          name,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                fontSize: 12,
-                                color: AppColors.textPrimary,
-                              ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Text(
-              'Updated: ${viewModel.formatShortDate(entry.updatedAt)}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontSize: 11,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _PlanMeetAddDialog extends StatefulWidget {
@@ -1035,8 +1131,8 @@ class _PlanMeetAddDialogState extends State<_PlanMeetAddDialog> {
     });
 
     try {
-      final PlanDropdownData data =
-          await widget.viewModel.fetchPlanDoctorChemistDropdown();
+      final PlanDropdownData data = await widget.viewModel
+          .fetchPlanDoctorChemistDropdown();
       if (!mounted) {
         return;
       }
@@ -1301,15 +1397,35 @@ class _PlanMeetAddDialogState extends State<_PlanMeetAddDialog> {
                               context,
                             ).textTheme.bodyLarge?.copyWith(fontSize: 14),
                           ),
-                          subtitle: item.code.isEmpty
-                              ? null
-                              : Text(
-                                  item.code,
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (item.code.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    item.code,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: AppColors.textSecondary,
+                                        ),
+                                  ),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  'Potential: ${_displayValue(item.potential)}'
+                                  '  |  Support: ${_displayValue(item.supportValue)}'
+                                  '  |  Expected: ${_displayValue(item.expectedSupportValue)}',
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
                                         color: AppColors.textSecondary,
                                       ),
                                 ),
+                              ),
+                            ],
+                          ),
                           leading: Checkbox(
                             value: isSelected,
                             onChanged: (_) => _toggleSelection(item),
@@ -1340,259 +1456,9 @@ class _PlanMeetAddDialogState extends State<_PlanMeetAddDialog> {
   }
 }
 
-class _CreateDcrDialog extends StatefulWidget {
-  const _CreateDcrDialog({required this.viewModel});
-
-  final HomeViewModel viewModel;
-
-  @override
-  State<_CreateDcrDialog> createState() => _CreateDcrDialogState();
-}
-
-class _CreateDcrDialogState extends State<_CreateDcrDialog> {
-  final TextEditingController _searchController = TextEditingController();
-  final Set<String> _selectedDoctors = <String>{};
-  final Set<String> _selectedChemists = <String>{};
-
-  late final List<DateTime> _dateOptions;
-  DateTime? _selectedDate;
-  bool _doctorTab = true;
-  String _query = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _dateOptions = widget.viewModel.getDcrDateOptions();
-    _selectedDate = _dateOptions.isEmpty ? null : _dateOptions.first;
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  List<String> get _source => _doctorTab
-      ? widget.viewModel.dummyDoctors
-      : widget.viewModel.dummyChemists;
-
-  List<String> get _filteredResults {
-    final String normalizedQuery = _query.trim();
-    if (normalizedQuery.isEmpty) {
-      return _source;
-    }
-    final String q = normalizedQuery.toLowerCase();
-    return _source
-        .where((String item) => item.toLowerCase().contains(q))
-        .toList();
-  }
-
-  bool get _canSave {
-    return _selectedDate != null &&
-        (_selectedDoctors.isNotEmpty || _selectedChemists.isNotEmpty);
-  }
-
-  void _applySearch() {
-    setState(() {
-      _query = _searchController.text.trim();
-    });
-  }
-
-  void _clearSearch() {
-    setState(() {
-      _searchController.clear();
-      _query = '';
-    });
-  }
-
-  void _switchTab(bool doctorTab) {
-    setState(() {
-      _doctorTab = doctorTab;
-      _searchController.clear();
-      _query = '';
-    });
-  }
-
-  void _toggleSelection(String name) {
-    final Set<String> target = _doctorTab
-        ? _selectedDoctors
-        : _selectedChemists;
-    setState(() {
-      if (target.contains(name)) {
-        target.remove(name);
-      } else {
-        target.add(name);
-      }
-    });
-  }
-
-  bool _isSelected(String name) {
-    final Set<String> target = _doctorTab
-        ? _selectedDoctors
-        : _selectedChemists;
-    return target.contains(name);
-  }
-
-  void _saveDcr() {
-    if (!_canSave) {
-      return;
-    }
-
-    widget.viewModel.saveOrMergeDcr(
-      date: _selectedDate!,
-      doctors: _selectedDoctors.toList(growable: false),
-      chemists: _selectedChemists.toList(growable: false),
-    );
-    Navigator.of(context).pop();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      contentPadding: const EdgeInsets.all(16),
-      content: SizedBox(
-        width: 620,
-        height: 560,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Create DCR',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<DateTime>(
-              initialValue: _selectedDate,
-              decoration: const InputDecoration(labelText: 'DCR Date'),
-              items: _dateOptions
-                  .map(
-                    (DateTime date) => DropdownMenuItem<DateTime>(
-                      value: date,
-                      child: Text(widget.viewModel.formatDcrDropdownDate(date)),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (DateTime? value) {
-                setState(() {
-                  _selectedDate = value;
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _TypeTab(
-                    label: 'Doctor (${widget.viewModel.dummyDoctors.length})',
-                    isSelected: _doctorTab,
-                    onTap: () => _switchTab(true),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _TypeTab(
-                    label: 'Chemist (${widget.viewModel.dummyChemists.length})',
-                    isSelected: !_doctorTab,
-                    onTap: () => _switchTab(false),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    textInputAction: TextInputAction.search,
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _applySearch(),
-                    decoration: InputDecoration(
-                      hintText: 'Search ${_doctorTab ? 'doctor' : 'chemist'}',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchController.text.isEmpty
-                          ? null
-                          : IconButton(
-                              onPressed: _clearSearch,
-                              icon: const Icon(Icons.close),
-                            ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 46,
-                  child: ElevatedButton(
-                    onPressed: _applySearch,
-                    child: const Text('Search'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Selected: Doctors ${_selectedDoctors.length} | Chemists ${_selectedChemists.length}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _filteredResults.isEmpty
-                  ? Center(
-                      child: Text(
-                        'No ${_doctorTab ? 'doctor' : 'chemist'} found.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _filteredResults.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (BuildContext context, int index) {
-                        final String item = _filteredResults[index];
-                        final bool isSelected = _isSelected(item);
-
-                        return ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: const BorderSide(color: AppColors.border),
-                          ),
-                          tileColor: const Color(0xFFF9FBFE),
-                          title: Text(
-                            item,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyLarge?.copyWith(fontSize: 14),
-                          ),
-                          leading: Checkbox(
-                            value: isSelected,
-                            onChanged: (_) => _toggleSelection(item),
-                          ),
-                          onTap: () => _toggleSelection(item),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _canSave ? _saveDcr : null,
-          child: const Text('Save DCR'),
-        ),
-      ],
-    );
-  }
+String _displayValue(String value) {
+  final String trimmed = value.trim();
+  return trimmed.isEmpty ? '-' : trimmed;
 }
 
 class _TypeTab extends StatelessWidget {

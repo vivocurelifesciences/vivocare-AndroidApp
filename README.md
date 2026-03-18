@@ -1,4 +1,4 @@
-# vivocare
+# vivocure
 
 A new Flutter project.
 

@@ -4,9 +4,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:vivocare/core/network/http_method.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/network/network_response.dart';
+import 'package:vivocure/core/network/http_method.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/network/network_response.dart';
 
 class NetworkClient {
   NetworkClient({

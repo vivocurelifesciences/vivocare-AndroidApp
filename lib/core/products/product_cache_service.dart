@@ -5,10 +5,10 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'package:vivocare/core/auth/auth_storage.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/network/network_client.dart';
-import 'package:vivocare/core/network/network_exception.dart';
+import 'package:vivocure/core/auth/auth_storage.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/network/network_client.dart';
+import 'package:vivocure/core/network/network_exception.dart';
 
 class ProductCacheService {
   ProductCacheService._();
@@ -112,7 +112,9 @@ class ProductCacheService {
         await cacheDirectory.delete(recursive: true);
       }
     } catch (error) {
-      debugPrintSynchronously('[PRODUCTS] Failed to clear cached files: $error');
+      debugPrintSynchronously(
+        '[PRODUCTS] Failed to clear cached files: $error',
+      );
     }
   }
 

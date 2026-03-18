@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/navigation/home_user_context.dart';
-import 'package:vivocare/core/network/network_client.dart';
-import 'package:vivocare/features/auth/view/add_chemist_screen.dart';
-import 'package:vivocare/features/auth/view/add_doctor_screen.dart';
-import 'package:vivocare/features/auth/view/login_screen.dart';
-import 'package:vivocare/features/auth/view/login_success_screen.dart';
-import 'package:vivocare/features/auth/view_model/login_view_model.dart';
-import 'package:vivocare/features/auth/repository/auth_repository.dart';
-import 'package:vivocare/features/home/view/home_screen.dart';
-import 'package:vivocare/features/home/view_model/home_view_model.dart';
-import 'package:vivocare/features/splash/view/splash_screen.dart';
-import 'package:vivocare/features/splash/view_model/splash_view_model.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/navigation/home_user_context.dart';
+import 'package:vivocure/core/network/network_client.dart';
+import 'package:vivocure/features/auth/view/add_chemist_screen.dart';
+import 'package:vivocure/features/auth/view/add_doctor_screen.dart';
+import 'package:vivocure/features/auth/view/login_screen.dart';
+import 'package:vivocure/features/auth/view/login_success_screen.dart';
+import 'package:vivocure/features/auth/view_model/login_view_model.dart';
+import 'package:vivocure/features/auth/repository/auth_repository.dart';
+import 'package:vivocure/features/home/view/home_screen.dart';
+import 'package:vivocure/features/home/view_model/home_view_model.dart';
+import 'package:vivocure/features/splash/view/splash_screen.dart';
+import 'package:vivocure/features/splash/view_model/splash_view_model.dart';
 
 class AppRoutes {
   static const String splash = '/';

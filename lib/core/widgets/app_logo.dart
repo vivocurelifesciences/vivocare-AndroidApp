@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 56, this.showTagline = true});
 
-  static const String _logoAsset = 'assets/images/vivocare_logo.jpeg';
+  static const String _fullLogoAsset = 'assets/images/vivocure_logo.jpeg';
+  static const String _iconAsset = 'assets/images/vivocure_logo.jpeg';
   static const double _logoAspectRatio = 671 / 767;
 
   final double size;
@@ -16,7 +17,7 @@ class AppLogo extends StatelessWidget {
       final double width = height * _logoAspectRatio;
 
       return Image.asset(
-        _logoAsset,
+        _fullLogoAsset,
         width: width,
         height: height,
         fit: BoxFit.contain,
@@ -24,15 +25,12 @@ class AppLogo extends StatelessWidget {
       );
     }
 
-    return ClipOval(
-      child: Image.asset(
-        _logoAsset,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        alignment: const Alignment(0, 0.22),
-        filterQuality: FilterQuality.high,
-      ),
+    return Image.asset(
+      _iconAsset,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
     );
   }
 }

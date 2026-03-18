@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:vivocare/app/router/app_router.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/theme/app_colors.dart';
-import 'package:vivocare/core/widgets/app_logo.dart';
-import 'package:vivocare/features/auth/view_model/login_view_model.dart';
+import 'package:vivocure/app/router/app_router.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/theme/app_colors.dart';
+import 'package:vivocure/core/widgets/app_logo.dart';
+import 'package:vivocure/features/auth/view_model/login_view_model.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -41,7 +41,9 @@ class LoginScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Center(child: AppLogo(size: 74)),
+                      const Center(
+                        child: AppLogo(size: 108, showTagline: true),
+                      ),
                       const SizedBox(height: 20),
                       Text(
                         'Welcome Back',
@@ -115,15 +117,14 @@ class LoginScreen extends StatelessWidget {
                         ),
                       ),
                       if (ApiConfig.isLowerEnvironment) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 16),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: TextButton(
+                          child: TextButton.icon(
                             style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                                horizontal: 10,
+                                vertical: 6,
                               ),
                             ),
                             onPressed: () {
@@ -138,10 +139,8 @@ class LoginScreen extends StatelessWidget {
                                     : username,
                               );
                             },
-                            child: const Text(
-                              'Bypass Login',
-                              style: TextStyle(fontSize: 12),
-                            ),
+                            icon: const Icon(Icons.flash_on_rounded, size: 16),
+                            label: const Text('Bypass Login'),
                           ),
                         ),
                       ],

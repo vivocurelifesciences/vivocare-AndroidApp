@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/network/network_client.dart';
-import 'package:vivocare/core/network/network_response.dart';
-import 'package:vivocare/features/auth/model/login_request.dart';
-import 'package:vivocare/features/auth/model/login_response.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/network/network_client.dart';
+import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/features/auth/model/login_request.dart';
+import 'package:vivocure/features/auth/model/login_response.dart';
 
 abstract interface class AuthRepository {
   Future<LoginResponse> login(LoginRequest request);

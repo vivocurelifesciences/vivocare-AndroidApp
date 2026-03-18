@@ -1,14 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:vivocare/app/router/app_router.dart';
-import 'package:vivocare/core/auth/auth_storage.dart';
-import 'package:vivocare/core/config/api_config.dart';
-import 'package:vivocare/core/navigation/home_user_context.dart';
-import 'package:vivocare/core/network/network_exception.dart';
-import 'package:vivocare/core/products/product_cache_service.dart';
-import 'package:vivocare/features/auth/model/login_request.dart';
-import 'package:vivocare/features/auth/model/login_response.dart';
-import 'package:vivocare/features/auth/repository/auth_repository.dart';
+import 'package:vivocure/app/router/app_router.dart';
+import 'package:vivocure/core/auth/auth_storage.dart';
+import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/navigation/home_user_context.dart';
+import 'package:vivocure/core/network/network_exception.dart';
+import 'package:vivocure/core/products/product_cache_service.dart';
+import 'package:vivocure/features/auth/model/login_request.dart';
+import 'package:vivocure/features/auth/model/login_response.dart';
+import 'package:vivocure/features/auth/repository/auth_repository.dart';
 
 class LoginViewModel extends ChangeNotifier {
   LoginViewModel({required AuthRepository authRepository})
