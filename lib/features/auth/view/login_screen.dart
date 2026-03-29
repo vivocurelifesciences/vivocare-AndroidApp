@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:vivocure/app/router/app_router.dart';
-import 'package:vivocure/core/config/api_config.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_logo.dart';
 import 'package:vivocure/features/auth/view_model/login_view_model.dart';
@@ -116,34 +114,6 @@ class LoginScreen extends StatelessWidget {
                               : const Text('Login'),
                         ),
                       ),
-                      if (ApiConfig.isLowerEnvironment) ...[
-                        const SizedBox(height: 16),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                            ),
-                            onPressed: () {
-                              final String username = viewModel
-                                  .usernameController
-                                  .text
-                                  .trim();
-                              Navigator.of(context).pushReplacementNamed(
-                                AppRoutes.home,
-                                arguments: username.isEmpty
-                                    ? 'Lower Env User'
-                                    : username,
-                              );
-                            },
-                            icon: const Icon(Icons.flash_on_rounded, size: 16),
-                            label: const Text('Bypass Login'),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),

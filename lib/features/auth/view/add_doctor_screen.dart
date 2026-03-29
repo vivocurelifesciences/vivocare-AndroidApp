@@ -4,6 +4,7 @@ import 'package:vivocure/core/config/api_config.dart';
 import 'package:vivocure/core/network/network_client.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
 
@@ -49,6 +50,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final GlobalKey _formSectionKey = GlobalKey();
+  final ScrollController _doctorListScrollController = ScrollController();
 
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _middleNameController = TextEditingController();
@@ -75,14 +77,18 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   bool _isSubmitting = false;
   bool _isActionInProgress = false;
   bool _isLoadingDoctors = false;
+  bool _isLoadingMoreDoctors = false;
+  bool _isLoadingChemistOptions = false;
   bool _showValidationErrors = false;
   List<_DoctorRecord> _doctorRecords = <_DoctorRecord>[];
+  List<_DoctorChemistOption> _availableChemists = <_DoctorChemistOption>[];
+  List<_DoctorChemistOption> _selectedChemists = <_DoctorChemistOption>[];
   _DoctorRecord? _selectedDoctor;
+  String? _nextDoctorCursor;
+  String _currentDoctorSearch = '';
   String? _selectedQualification;
   String? _selectedSpeciality;
   String? _selectedCategory;
-  String? _centerMessage;
-  bool _isCenterMessageError = false;
 
   @override
   void initState() {
@@ -91,6 +97,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       scheme: ApiConfig.scheme,
       host: ApiConfig.host,
     );
+    _doctorListScrollController.addListener(_handleDoctorListScroll);
   }
 
   @override
@@ -111,11 +118,27 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _experienceYearsController.dispose();
     _statusController.dispose();
     _searchController.dispose();
+    _doctorListScrollController.dispose();
     _networkClient.close();
     super.dispose();
   }
 
   bool get _isBusy => _isSubmitting || _isActionInProgress;
+
+  bool get _isFetchingDoctorData => _isLoadingDoctors || _isLoadingMoreDoctors;
+
+  bool get _isLoadingOverlayVisible =>
+      _isBusy || _isLoadingDoctors || _isLoadingChemistOptions;
+
+  String get _loadingOverlayMessage {
+    if (_isLoadingChemistOptions) {
+      return 'Loading chemists...';
+    }
+    if (_isFetchingDoctorData) {
+      return 'Loading doctors...';
+    }
+    return 'Please wait...';
+  }
 
   void _switchMode(_DoctorActionMode mode) {
     if (_mode == mode) {
@@ -127,6 +150,9 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       _selectedDoctor = null;
       _showValidationErrors = false;
       _searchController.clear();
+      _currentDoctorSearch = '';
+      _nextDoctorCursor = null;
+      _isLoadingMoreDoctors = false;
       _doctorRecords = mode == _DoctorActionMode.add
           ? _doctorRecords
           : <_DoctorRecord>[];
@@ -135,6 +161,24 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
 
     if (mode == _DoctorActionMode.edit) {
       _loadDoctors();
+    }
+  }
+
+  void _handleDoctorListScroll() {
+    if (!_doctorListScrollController.hasClients ||
+        _isLoadingDoctors ||
+        _isLoadingMoreDoctors) {
+      return;
+    }
+
+    final String nextCursor = _nextDoctorCursor?.trim() ?? '';
+    if (nextCursor.isEmpty) {
+      return;
+    }
+
+    final ScrollPosition position = _doctorListScrollController.position;
+    if (position.extentAfter < 220) {
+      _loadDoctors(loadMore: true);
     }
   }
 
@@ -308,24 +352,44 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     await _loadDoctors(search: _searchController.text);
   }
 
-  Future<void> _loadDoctors({String search = ''}) async {
+  Future<void> _loadDoctors({String search = '', bool loadMore = false}) async {
+    if (loadMore) {
+      final String nextCursor = _nextDoctorCursor?.trim() ?? '';
+      if (_isLoadingDoctors || _isLoadingMoreDoctors || nextCursor.isEmpty) {
+        return;
+      }
+    }
+
     final AuthSession? session = await _loadSessionOrShowError();
     if (session == null) {
       return;
     }
 
+    final String trimmedSearch = loadMore
+        ? _currentDoctorSearch
+        : search.trim();
+
     setState(() {
-      _isLoadingDoctors = true;
+      if (loadMore) {
+        _isLoadingMoreDoctors = true;
+      } else {
+        _isLoadingDoctors = true;
+        _currentDoctorSearch = trimmedSearch;
+        _nextDoctorCursor = null;
+      }
     });
 
     try {
-      final String trimmedSearch = search.trim();
-      final Map<String, dynamic> query = <String, dynamic>{
-        'limit': 100,
-        'sort_order': 'asc',
-      };
-      if (trimmedSearch.isNotEmpty) {
+      final bool isSearchRequest = trimmedSearch.isNotEmpty;
+      final Map<String, dynamic> query = <String, dynamic>{'sort_order': 'asc'};
+      if (isSearchRequest) {
         query['search_text'] = trimmedSearch;
+      } else {
+        query['limit'] = 100;
+      }
+      final String nextCursor = _nextDoctorCursor?.trim() ?? '';
+      if (loadMore && nextCursor.isNotEmpty) {
+        query['cursor'] = nextCursor;
       }
 
       final NetworkResponse<dynamic> response = await _networkClient.get(
@@ -334,15 +398,35 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
         queryParameters: query,
       );
 
-      final List<_DoctorRecord> doctors = _parseDoctors(response.data);
+      final _DoctorListPage page = _parseDoctorPage(response.data);
 
       if (!mounted) {
         return;
       }
 
+      final String resolvedNextCursor = page.nextCursor.trim();
       setState(() {
-        _doctorRecords = doctors;
+        if (loadMore) {
+          final Set<String> existingIds = _doctorRecords
+              .map((_DoctorRecord item) => item.id)
+              .toSet();
+          _doctorRecords = <_DoctorRecord>[
+            ..._doctorRecords,
+            ...page.doctors.where(
+              (_DoctorRecord item) => !existingIds.contains(item.id),
+            ),
+          ];
+        } else {
+          _doctorRecords = page.doctors;
+        }
+        _nextDoctorCursor =
+            resolvedNextCursor.isEmpty || resolvedNextCursor == nextCursor
+            ? null
+            : resolvedNextCursor;
       });
+      if (!loadMore && _doctorListScrollController.hasClients) {
+        _doctorListScrollController.jumpTo(0);
+      }
     } on NetworkException catch (error) {
       _showCenterMessage(error.message, isError: true);
     } catch (_) {
@@ -350,10 +434,262 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoadingDoctors = false;
+          if (loadMore) {
+            _isLoadingMoreDoctors = false;
+          } else {
+            _isLoadingDoctors = false;
+          }
         });
       }
     }
+  }
+
+  Future<bool> _ensureChemistOptionsLoaded({bool forceRefresh = false}) async {
+    if (_isLoadingChemistOptions) {
+      return false;
+    }
+    if (!forceRefresh && _availableChemists.isNotEmpty) {
+      return true;
+    }
+
+    final AuthSession? session = await _loadSessionOrShowError();
+    if (session == null) {
+      return false;
+    }
+
+    setState(() {
+      _isLoadingChemistOptions = true;
+    });
+
+    try {
+      final NetworkResponse<dynamic> response = await _networkClient.get(
+        '${ApiConfig.apiVersionPath}/plans/doctor-chemist-dropdown',
+        headers: _authHeaders(session),
+      );
+
+      final List<_DoctorChemistOption> chemists = _parseChemistDropdownOptions(
+        response.data,
+      );
+
+      if (!mounted) {
+        return false;
+      }
+
+      setState(() {
+        _availableChemists = chemists;
+        _selectedChemists = _mergeChemistSelections(
+          selected: _selectedChemists,
+          available: chemists,
+        );
+      });
+      return true;
+    } on NetworkException catch (error) {
+      _showCenterMessage(error.message, isError: true);
+      return false;
+    } catch (_) {
+      _showCenterMessage('Unable to load chemist list.', isError: true);
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingChemistOptions = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openChemistSelector() async {
+    final bool hasChemists = await _ensureChemistOptionsLoaded();
+    if (!hasChemists || !mounted) {
+      return;
+    }
+
+    final List<_DoctorChemistOption>? selection =
+        await _showChemistSelectionDialog();
+    if (selection == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedChemists = selection;
+    });
+  }
+
+  Future<List<_DoctorChemistOption>?> _showChemistSelectionDialog() {
+    final Set<String> selectedIds = _selectedChemists
+        .map((_DoctorChemistOption item) => item.id)
+        .toSet();
+    String searchText = '';
+
+    return showDialog<List<_DoctorChemistOption>>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            final List<_DoctorChemistOption> filteredChemists =
+                _availableChemists
+                    .where((_DoctorChemistOption item) {
+                      final String query = searchText.trim().toLowerCase();
+                      if (query.isEmpty) {
+                        return true;
+                      }
+                      return item.name.toLowerCase().contains(query) ||
+                          item.code.toLowerCase().contains(query) ||
+                          item.area.toLowerCase().contains(query);
+                    })
+                    .toList(growable: false);
+
+            return AlertDialog(
+              title: const Text('Select Chemists'),
+              content: SizedBox(
+                width: 680,
+                height: 560,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Search chemists',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (String value) {
+                        setDialogState(() {
+                          searchText = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFDCE6F0)),
+                        ),
+                        child: _availableChemists.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Text(
+                                    'No chemists available from planned chemist data.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF6C7A89),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : filteredChemists.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Text(
+                                    'No chemists found for this search.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF6C7A89),
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: filteredChemists.length,
+                                separatorBuilder: (_, _) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (BuildContext context, int index) {
+                                  final _DoctorChemistOption chemist =
+                                      filteredChemists[index];
+                                  final bool isSelected = selectedIds.contains(
+                                    chemist.id,
+                                  );
+
+                                  return CheckboxListTile(
+                                    value: isSelected,
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                    title: Text(chemist.name),
+                                    subtitle: Text(
+                                      [
+                                        if (chemist.code.isNotEmpty)
+                                          'Code: ${chemist.code}',
+                                        if (chemist.area.isNotEmpty)
+                                          'Area: ${chemist.area}',
+                                      ].join('  |  '),
+                                    ),
+                                    onChanged: (bool? value) {
+                                      setDialogState(() {
+                                        if (value ?? false) {
+                                          selectedIds.add(chemist.id);
+                                        } else {
+                                          selectedIds.remove(chemist.id);
+                                        }
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: selectedIds.isEmpty
+                      ? null
+                      : () {
+                          setDialogState(() {
+                            selectedIds.clear();
+                          });
+                        },
+                  child: const Text('Clear'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(
+                      _availableChemists
+                          .where(
+                            (_DoctorChemistOption item) =>
+                                selectedIds.contains(item.id),
+                          )
+                          .toList(growable: false),
+                    );
+                  },
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<_DoctorChemistOption> _mergeChemistSelections({
+    required List<_DoctorChemistOption> selected,
+    required List<_DoctorChemistOption> available,
+  }) {
+    final Map<String, _DoctorChemistOption> availableById =
+        <String, _DoctorChemistOption>{
+          for (final _DoctorChemistOption item in available) item.id: item,
+        };
+    final List<_DoctorChemistOption> merged = <_DoctorChemistOption>[];
+    final Set<String> seenIds = <String>{};
+
+    for (final _DoctorChemistOption item in selected) {
+      final String id = item.id.trim();
+      if (id.isEmpty || !seenIds.add(id)) {
+        continue;
+      }
+      merged.add(availableById[id] ?? item);
+    }
+
+    return merged;
   }
 
   Future<void> _handleEditDoctor(_DoctorRecord doctor) async {
@@ -501,12 +837,13 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     });
   }
 
-  List<_DoctorRecord> _parseDoctors(dynamic data) {
+  _DoctorListPage _parseDoctorPage(dynamic data) {
     final Map<String, dynamic> root = _asMap(data);
+    final Map<String, dynamic> nested = _asMap(root['data']);
+    final String nextCursor = _asString(nested['next_cursor']);
 
     Object? rawItems = root['items'];
     if (rawItems is! List) {
-      final Map<String, dynamic> nested = _asMap(root['data']);
       rawItems = nested['items'];
       if (rawItems is! List) {
         rawItems = nested['data'];
@@ -518,7 +855,10 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     }
 
     if (rawItems is! List) {
-      return const <_DoctorRecord>[];
+      return _DoctorListPage(
+        doctors: const <_DoctorRecord>[],
+        nextCursor: nextCursor,
+      );
     }
 
     final List<_DoctorRecord> doctors = <_DoctorRecord>[];
@@ -528,7 +868,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
         doctors.add(doctor);
       }
     }
-    return doctors;
+    return _DoctorListPage(doctors: doctors, nextCursor: nextCursor);
   }
 
   Map<String, dynamic> _extractEntityMap(dynamic data) {
@@ -562,6 +902,10 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       _specialityOptions,
     );
     _selectedCategory = _normalizeOption(doctor.category, _categoryOptions);
+    _selectedChemists = _mergeChemistSelections(
+      selected: doctor.chemists,
+      available: _availableChemists,
+    );
   }
 
   void _clearForm() {
@@ -583,6 +927,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _selectedQualification = null;
     _selectedSpeciality = null;
     _selectedCategory = null;
+    _selectedChemists = <_DoctorChemistOption>[];
     _showValidationErrors = false;
   }
 
@@ -610,6 +955,10 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       'dob': _textOrEmpty(_dobController.text),
       'dom': _textOrEmpty(_domController.text),
       'experience_years': _intOrEmpty(_experienceYearsController.text),
+      'chemist_ids': _selectedChemists
+          .map((_DoctorChemistOption item) => item.id.trim())
+          .where((String id) => id.isNotEmpty)
+          .join(','),
     };
 
     if (includeStatus) {
@@ -669,25 +1018,16 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     return null;
   }
 
-  void _showCenterMessage(String message, {bool isError = false}) {
+  Future<void> _showCenterMessage(String message, {bool isError = false}) {
     if (!mounted) {
-      return;
+      return Future<void>.value();
     }
 
-    setState(() {
-      _centerMessage = message;
-      _isCenterMessageError = isError;
-    });
-
-    Future<void>.delayed(const Duration(seconds: 2), () {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _centerMessage = null;
-        _isCenterMessageError = false;
-      });
-    });
+    return AppAlertDialog.show(
+      context: context,
+      message: message,
+      type: isError ? AppAlertType.error : AppAlertType.success,
+    );
   }
 
   Widget _buildSurface({required Widget child, Key? key}) {
@@ -743,7 +1083,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: _isLoadingDoctors
+                  onPressed: _isLoadingDoctors || _isLoadingMoreDoctors
                       ? null
                       : () => _loadDoctors(search: _searchController.text),
                   child: _isLoadingDoctors
@@ -813,76 +1153,84 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               ),
             )
           else
-            Column(
-              children: _doctorRecords
-                  .map((_DoctorRecord doctor) {
-                    final bool isSelected = _selectedDoctor?.id == doctor.id;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: SwipeActionTile(
-                        onEdit: () => _handleEditDoctor(doctor),
-                        onDelete: () => _handleDeleteDoctor(doctor),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFFEAF4FF)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isSelected
-                                  ? const Color(0xFF1E88E5)
-                                  : const Color(0xFFDCE6F0),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                flex: 4,
-                                child: Text(
-                                  doctor.fullName,
-                                  style: TextStyle(
-                                    fontWeight: isSelected
-                                        ? FontWeight.w700
-                                        : FontWeight.w600,
-                                    color: const Color(0xFF1D3557),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  doctor.doctorCode.isEmpty
-                                      ? '-'
-                                      : doctor.doctorCode,
-                                  style: const TextStyle(
-                                    color: Color(0xFF52606D),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  doctor.expectedSupportValue.isEmpty
-                                      ? '-'
-                                      : doctor.expectedSupportValue,
-                                  style: const TextStyle(
-                                    color: Color(0xFF52606D),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+            SizedBox(
+              height: 420,
+              child: ListView.separated(
+                controller: _doctorListScrollController,
+                itemCount:
+                    _doctorRecords.length + (_isLoadingMoreDoctors ? 1 : 0),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (BuildContext context, int index) {
+                  if (index >= _doctorRecords.length) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
                       ),
                     );
-                  })
-                  .toList(growable: false),
+                  }
+
+                  final _DoctorRecord doctor = _doctorRecords[index];
+                  final bool isSelected = _selectedDoctor?.id == doctor.id;
+                  return SwipeActionTile(
+                    onEdit: () => _handleEditDoctor(doctor),
+                    onDelete: () => _handleDeleteDoctor(doctor),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFEAF4FF)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFF1E88E5)
+                              : const Color(0xFFDCE6F0),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: Text(
+                              doctor.fullName,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                                color: const Color(0xFF1D3557),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              doctor.doctorCode.isEmpty
+                                  ? '-'
+                                  : doctor.doctorCode,
+                              style: const TextStyle(color: Color(0xFF52606D)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              doctor.expectedSupportValue.isEmpty
+                                  ? '-'
+                                  : doctor.expectedSupportValue,
+                              style: const TextStyle(color: Color(0xFF52606D)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
         ],
       ),
@@ -1029,6 +1377,77 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                 },
               ),
               const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Linked Chemists',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1D3557),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: _isBusy || _isLoadingChemistOptions
+                      ? null
+                      : _openChemistSelector,
+                  icon: _isLoadingChemistOptions
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        )
+                      : const Icon(Icons.local_pharmacy_outlined),
+                  label: Text(
+                    _selectedChemists.isEmpty
+                        ? 'Select Chemists'
+                        : 'Selected Chemists (${_selectedChemists.length})',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_selectedChemists.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FBFD),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFDCE6F0)),
+                  ),
+                  child: const Text(
+                    'No chemists selected.',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedChemists
+                      .map(
+                        (_DoctorChemistOption item) => InputChip(
+                          label: Text(item.displayLabel),
+                          onDeleted: _isBusy
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedChemists = _selectedChemists
+                                        .where(
+                                          (_DoctorChemistOption chemist) =>
+                                              chemist.id != item.id,
+                                        )
+                                        .toList(growable: false);
+                                  });
+                                },
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              const SizedBox(height: 12),
               _FormTextField(
                 controller: _potentialController,
                 label: 'Potential',
@@ -1157,46 +1576,25 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                     ),
                   ),
                 ),
-                if (_isBusy)
+                if (_isLoadingOverlayVisible)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Container(
                         color: Colors.black.withValues(alpha: 0.3),
-                        child: const Center(child: CircularProgressIndicator()),
-                      ),
-                    ),
-                  ),
-                if (_centerMessage != null)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _isCenterMessageError
-                                  ? const Color(0xFFFFF2F2)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _isCenterMessageError
-                                    ? const Color(0xFFFFC9C9)
-                                    : const Color(0xFFE3EAF3),
-                              ),
-                            ),
-                            child: Text(
-                              _centerMessage!,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 14),
+                            Text(
+                              _loadingOverlayMessage,
                               style: const TextStyle(
-                                fontSize: 16,
+                                color: Colors.white,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
-                              textAlign: TextAlign.center,
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ),
@@ -1323,6 +1721,7 @@ class _DoctorRecord {
     required this.dom,
     required this.experienceYears,
     required this.status,
+    required this.chemists,
   });
 
   final String id;
@@ -1345,6 +1744,7 @@ class _DoctorRecord {
   final String dom;
   final String experienceYears;
   final String status;
+  final List<_DoctorChemistOption> chemists;
 
   String get fullName {
     final String combined = <String>[
@@ -1384,8 +1784,162 @@ class _DoctorRecord {
       dom: _asDateString(json['dom']),
       experienceYears: _asString(json['experience_years']),
       status: _asString(json['status']),
+      chemists: _parseDoctorChemistSelections(
+        rawChemistIds: json['chemist_ids'],
+        rawChemists: json['chemists'],
+      ),
     );
   }
+}
+
+class _DoctorListPage {
+  const _DoctorListPage({required this.doctors, required this.nextCursor});
+
+  final List<_DoctorRecord> doctors;
+  final String nextCursor;
+}
+
+class _DoctorChemistOption {
+  const _DoctorChemistOption({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.area,
+    this.customerType = 'chemist',
+  });
+
+  final String id;
+  final String name;
+  final String code;
+  final String area;
+  final String customerType;
+
+  String get normalizedType => customerType.trim().toLowerCase();
+
+  String get displayLabel {
+    final String resolvedName = name.trim().isEmpty ? id : name;
+    if (area.isEmpty) {
+      return resolvedName;
+    }
+    return '$resolvedName • $area';
+  }
+
+  factory _DoctorChemistOption.fromJson(
+    Map<String, dynamic> json, {
+    String fallbackType = 'chemist',
+  }) {
+    final String firstName = _asString(json['first_name']);
+    final String middleName = _asString(json['middle_name']);
+    final String lastName = _asString(json['last_name']);
+    final String combinedName = <String>[
+      firstName,
+      middleName,
+      lastName,
+    ].where((String value) => value.trim().isNotEmpty).join(' ').trim();
+
+    return _DoctorChemistOption(
+      id: _asString(json['id']).isEmpty
+          ? _asString(json['customer_id'])
+          : _asString(json['id']),
+      name: _asString(json['name']).isEmpty
+          ? (_asString(json['customer_name']).isEmpty
+                ? combinedName
+                : _asString(json['customer_name']))
+          : _asString(json['name']),
+      code: _asString(json['chemist_code']).isEmpty
+          ? (_asString(json['code']).isEmpty
+                ? _asString(json['customer_code'])
+                : _asString(json['code']))
+          : _asString(json['chemist_code']),
+      area: _asString(json['area']),
+      customerType: _asString(json['customer_type']).isEmpty
+          ? fallbackType
+          : _asString(json['customer_type']),
+    );
+  }
+}
+
+List<_DoctorChemistOption> _parseChemistDropdownOptions(dynamic data) {
+  final Map<String, dynamic> root = _asMap(data);
+  final dynamic payload = root['data'] ?? data;
+  final Map<String, dynamic> nested = _asMap(payload);
+
+  List<_DoctorChemistOption> chemists = _parseChemistOptionList(
+    nested['chemists'],
+    fallbackType: 'chemist',
+  );
+
+  if (chemists.isEmpty) {
+    chemists = _parseChemistOptionList(payload)
+        .where((_DoctorChemistOption item) {
+          return item.normalizedType == 'chemist';
+        })
+        .toList(growable: false);
+  }
+
+  final List<_DoctorChemistOption> uniqueChemists = <_DoctorChemistOption>[];
+  final Set<String> seenIds = <String>{};
+
+  for (final _DoctorChemistOption item in chemists) {
+    final String id = item.id.trim();
+    if (id.isEmpty || !seenIds.add(id)) {
+      continue;
+    }
+    uniqueChemists.add(item);
+  }
+
+  uniqueChemists.sort((_DoctorChemistOption a, _DoctorChemistOption b) {
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+
+  return uniqueChemists;
+}
+
+List<_DoctorChemistOption> _parseChemistOptionList(
+  Object? rawData, {
+  String fallbackType = 'chemist',
+}) {
+  if (rawData is! List) {
+    return <_DoctorChemistOption>[];
+  }
+
+  final List<_DoctorChemistOption> chemists = <_DoctorChemistOption>[];
+  for (final dynamic item in rawData) {
+    final _DoctorChemistOption chemist = _DoctorChemistOption.fromJson(
+      _asMap(item),
+      fallbackType: fallbackType,
+    );
+    if (chemist.id.isNotEmpty) {
+      chemists.add(chemist);
+    }
+  }
+
+  return chemists;
+}
+
+List<_DoctorChemistOption> _parseDoctorChemistSelections({
+  required Object? rawChemistIds,
+  required Object? rawChemists,
+}) {
+  final List<_DoctorChemistOption> chemists = _parseChemistOptionList(
+    rawChemists,
+    fallbackType: 'chemist',
+  );
+  final Set<String> seenIds = chemists
+      .map((_DoctorChemistOption item) => item.id)
+      .where((String id) => id.trim().isNotEmpty)
+      .toSet();
+
+  final List<String> chemistIds = _readStringList(rawChemistIds);
+  for (final String chemistId in chemistIds) {
+    final String id = chemistId.trim();
+    if (id.isEmpty || !seenIds.add(id)) {
+      continue;
+    }
+    chemists.add(_DoctorChemistOption(id: id, name: id, code: '', area: ''));
+  }
+
+  return chemists;
 }
 
 Map<String, dynamic> _asMap(Object? value) {
@@ -1417,4 +1971,24 @@ String _asDateString(Object? value) {
     return raw.substring(0, 10);
   }
   return raw;
+}
+
+List<String> _readStringList(Object? value) {
+  if (value is List) {
+    return value
+        .map((Object? item) => _asString(item))
+        .where((String item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  final String raw = _asString(value);
+  if (raw.isEmpty) {
+    return <String>[];
+  }
+
+  return raw
+      .split(',')
+      .map((String item) => item.trim())
+      .where((String item) => item.isNotEmpty)
+      .toList(growable: false);
 }

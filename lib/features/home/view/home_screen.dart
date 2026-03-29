@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:vivocure/app/router/app_route_observer.dart';
 import 'package:vivocure/app/router/app_router.dart';
 import 'package:vivocure/core/auth/auth_storage.dart';
 import 'package:vivocure/core/products/product_cache_service.dart';
+import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 import 'package:vivocure/features/home/view/widgets/home_dashboard.dart';
 import 'package:vivocure/features/home/view/widgets/home_sidebar.dart';
@@ -18,10 +20,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   bool _initialized = false;
   bool _isLoggingOut = false;
+  bool _isProductCacheListenerAttached = false;
   Timer? _clockTimer;
+  PageRoute<dynamic>? _subscribedRoute;
 
   Future<void> _logout(HomeViewModel viewModel) async {
     if (_isLoggingOut) {
@@ -49,15 +53,43 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to finish logout cleanup. Please try again.'),
-        ),
-      );
       setState(() {
         _isLoggingOut = false;
       });
+      await AppAlertDialog.showError(
+        context: context,
+        message: 'Unable to finish logout cleanup. Please try again.',
+      );
     }
+  }
+
+  Future<void> _refreshHomeApis({bool includePlanMeet = true}) async {
+    if (!mounted) {
+      return;
+    }
+
+    final HomeViewModel viewModel = context.read<HomeViewModel>();
+    final List<Future<void>> refreshTasks = <Future<void>>[
+      viewModel.fetchTodayPlan(),
+      viewModel.fetchUpcomingEvents(),
+    ];
+
+    if (includePlanMeet && viewModel.isPlanMeetSelected) {
+      refreshTasks.add(
+        viewModel.fetchPlanMeetEntries(
+          visitDate: viewModel.currentPlanMeetDate,
+        ),
+      );
+    }
+
+    await Future.wait<void>(refreshTasks);
+  }
+
+  void _handleProductCacheUpdated() {
+    if (!mounted) {
+      return;
+    }
+    context.read<HomeViewModel>().loadCachedProducts();
   }
 
   @override
@@ -74,6 +106,21 @@ class _HomeScreenState extends State<HomeScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
+    final ModalRoute<dynamic>? currentRoute = ModalRoute.of(context);
+    if (currentRoute is PageRoute<dynamic> &&
+        currentRoute != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = currentRoute;
+      appRouteObserver.subscribe(this, currentRoute);
+    }
+
+    if (!_isProductCacheListenerAttached) {
+      ProductCacheService.cacheRevision.addListener(_handleProductCacheUpdated);
+      _isProductCacheListenerAttached = true;
+    }
+
     if (_initialized) {
       return;
     }
@@ -83,8 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final HomeViewModel viewModel = context.read<HomeViewModel>();
       viewModel.initializeFromArgs(args);
       viewModel.loadCachedProducts();
-      viewModel.fetchTodayPlan();
-      viewModel.fetchUpcomingEvents();
+      _refreshHomeApis(includePlanMeet: false);
     });
 
     _initialized = true;
@@ -92,8 +138,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
+    if (_isProductCacheListenerAttached) {
+      ProductCacheService.cacheRevision.removeListener(
+        _handleProductCacheUpdated,
+      );
+    }
     _clockTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    _refreshHomeApis();
   }
 
   @override
@@ -128,32 +185,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           }
 
                           if (index == HomeViewModel.performanceMenuIndex) {
-                            showDialog<void>(
+                            AppAlertDialog.showInfo(
                               context: context,
-                              builder: (_) => AlertDialog(
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(
-                                      Icons.construction_rounded,
-                                      size: 64,
-                                      color: Colors.orange,
-                                    ),
-                                    SizedBox(height: 16),
-                                    Text(
-                                      'Work is under progress',
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
-                                    child: const Text('OK'),
-                                  ),
-                                ],
-                              ),
+                              title: 'Performance',
+                              message: 'Work is under progress',
                             );
                             return;
                           }

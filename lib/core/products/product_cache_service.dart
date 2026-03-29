@@ -15,6 +15,33 @@ class ProductCacheService {
 
   static const String _productsCacheKey = 'cached_products_dropdown_v1';
   static const String _cacheDirectoryName = 'product_images';
+  static const String _lastSyncedAccessTokenKey =
+      'products_last_synced_access_token';
+  static final ValueNotifier<int> cacheRevision = ValueNotifier<int>(0);
+  static Future<void>? _syncInProgress;
+
+  static Future<void> syncProductsInBackground({
+    required AuthSession session,
+  }) async {
+    if (await _isAlreadySyncedForSession(session)) {
+      return;
+    }
+
+    if (_syncInProgress != null) {
+      return _syncInProgress!;
+    }
+
+    late final Future<void> trackedFuture;
+    trackedFuture = syncProductsAfterLogin(session: session)
+        .then((_) => _markSyncedForSession(session))
+        .whenComplete(() {
+          if (identical(_syncInProgress, trackedFuture)) {
+            _syncInProgress = null;
+          }
+        });
+    _syncInProgress = trackedFuture;
+    return trackedFuture;
+  }
 
   static Future<void> syncProductsAfterLogin({
     required AuthSession session,
@@ -73,6 +100,7 @@ class ProductCacheService {
               .toList(growable: false),
         ),
       );
+      _notifyCacheUpdated();
 
       debugPrintSynchronously(
         '[PRODUCTS] Cached ${cachedProducts.length} products locally.',
@@ -105,6 +133,7 @@ class ProductCacheService {
   static Future<void> clearCachedProducts() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.remove(_productsCacheKey);
+    await prefs.remove(_lastSyncedAccessTokenKey);
 
     try {
       final Directory cacheDirectory = await _getCacheDirectory();
@@ -116,6 +145,7 @@ class ProductCacheService {
         '[PRODUCTS] Failed to clear cached files: $error',
       );
     }
+    _notifyCacheUpdated();
   }
 
   static Future<Directory> _getCacheDirectory() async {
@@ -174,6 +204,31 @@ class ProductCacheService {
       return '.webp';
     }
     return '.jpg';
+  }
+
+  static void _notifyCacheUpdated() {
+    cacheRevision.value = cacheRevision.value + 1;
+  }
+
+  static Future<bool> _isAlreadySyncedForSession(AuthSession session) async {
+    if (!session.hasAccessToken) {
+      return true;
+    }
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String lastSyncedToken =
+        prefs.getString(_lastSyncedAccessTokenKey) ?? '';
+    final bool hasCachedProducts = prefs.containsKey(_productsCacheKey);
+    return hasCachedProducts && lastSyncedToken == session.accessToken;
+  }
+
+  static Future<void> _markSyncedForSession(AuthSession session) async {
+    if (!session.hasAccessToken) {
+      return;
+    }
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastSyncedAccessTokenKey, session.accessToken);
   }
 
   static Map<String, dynamic> _asMap(Object? value) {

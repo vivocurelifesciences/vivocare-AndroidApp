@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
+import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 import 'package:vivocure/core/widgets/app_panel.dart';
 import 'package:vivocure/features/home/view_model/home_view_model.dart';
@@ -17,6 +18,7 @@ class DcrListScreen extends StatefulWidget {
 
 class _DcrListScreenState extends State<DcrListScreen> {
   int _activeSectionIndex = 0;
+  bool _didCreateDcr = false;
 
   @override
   void initState() {
@@ -71,7 +73,7 @@ class _DcrListScreenState extends State<DcrListScreen> {
   }
 
   Future<void> _openCreateDcrSheet(PlanMeetEntry entry) async {
-    await showModalBottomSheet<void>(
+    final String? message = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -83,6 +85,20 @@ class _DcrListScreenState extends State<DcrListScreen> {
         child: _PlanDcrCreationSheet(entry: entry, viewModel: widget.viewModel),
       ),
     );
+
+    if (!mounted || message == null) {
+      return;
+    }
+
+    _didCreateDcr = true;
+    await AppAlertDialog.showSuccess(context: context, message: message);
+  }
+
+  void _closeScreen() {
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pop(_didCreateDcr);
   }
 
   @override
@@ -92,109 +108,120 @@ class _DcrListScreenState extends State<DcrListScreen> {
       builder: (BuildContext context, _) {
         final HomeViewModel viewModel = widget.viewModel;
 
-        return Scaffold(
-          body: AppPageBackdrop(
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
-                    child: AppPanel(
-                      padding: const EdgeInsets.all(20),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: <Color>[Color(0xFFF8FBFF), Color(0xFFEAF4FF)],
+        return PopScope<void>(
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, void _) {
+            if (didPop) {
+              return;
+            }
+            _closeScreen();
+          },
+          child: Scaffold(
+            body: AppPageBackdrop(
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                      child: AppPanel(
+                        padding: const EdgeInsets.all(20),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: <Color>[Color(0xFFF8FBFF), Color(0xFFEAF4FF)],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            IconButton(
+                              onPressed: _closeScreen,
+                              icon: const Icon(Icons.arrow_back_rounded),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Create DCR',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Use Make a DCR to submit new DCR from plan entries, or use Get DCR List to load existing DCR records.',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.arrow_back_rounded),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Text(
-                                  'Create DCR',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                Expanded(
+                                  child: _SectionTab(
+                                    label: 'Make a DCR',
+                                    isSelected: _activeSectionIndex == 0,
+                                    onTap: () {
+                                      setState(() {
+                                        _activeSectionIndex = 0;
+                                      });
+                                    },
+                                  ),
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Use Make a DCR to submit new DCR from plan entries, or use Get DCR List to load existing DCR records.',
-                                  style: Theme.of(context).textTheme.bodyMedium,
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _SectionTab(
+                                    label: 'Get DCR List',
+                                    isSelected: _activeSectionIndex == 1,
+                                    onTap: () {
+                                      setState(() {
+                                        _activeSectionIndex = 1;
+                                      });
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            if (_activeSectionIndex == 0)
+                              _MakeDcrSection(
+                                viewModel: viewModel,
+                                selectedDate: viewModel.currentPlanMeetDate,
+                                onPlanDateTap: _selectPlanDate,
+                                onCreateDcrTap: _openCreateDcrSheet,
+                              )
+                            else
+                              _DcrHistorySection(
+                                viewModel: viewModel,
+                                onTodayTap: viewModel.fetchTodayDcrEntries,
+                                onStartDateTap: () =>
+                                    _selectDcrDate(isStartDate: true),
+                                onEndDateTap: () =>
+                                    _selectDcrDate(isStartDate: false),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _SectionTab(
-                                  label: 'Make a DCR',
-                                  isSelected: _activeSectionIndex == 0,
-                                  onTap: () {
-                                    setState(() {
-                                      _activeSectionIndex = 0;
-                                    });
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _SectionTab(
-                                  label: 'Get DCR List',
-                                  isSelected: _activeSectionIndex == 1,
-                                  onTap: () {
-                                    setState(() {
-                                      _activeSectionIndex = 1;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          if (_activeSectionIndex == 0)
-                            _MakeDcrSection(
-                              viewModel: viewModel,
-                              selectedDate: viewModel.currentPlanMeetDate,
-                              onPlanDateTap: _selectPlanDate,
-                              onCreateDcrTap: _openCreateDcrSheet,
-                            )
-                          else
-                            _DcrHistorySection(
-                              viewModel: viewModel,
-                              onTodayTap: viewModel.fetchTodayDcrEntries,
-                              onStartDateTap: () =>
-                                  _selectDcrDate(isStartDate: true),
-                              onEndDateTap: () =>
-                                  _selectDcrDate(isStartDate: false),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -219,6 +246,9 @@ class _MakeDcrSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final List<PlanMeetEntry> pendingPlanEntries =
+        viewModel.pendingPlanMeetEntriesForDcr;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -241,7 +271,7 @@ class _MakeDcrSection extends StatelessWidget {
                 border: Border.all(color: AppColors.border),
               ),
               child: Text(
-                '${viewModel.planMeetEntries.length} plan${viewModel.planMeetEntries.length == 1 ? '' : 's'}',
+                '${pendingPlanEntries.length} plan${pendingPlanEntries.length == 1 ? '' : 's'}',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w700,
@@ -255,7 +285,7 @@ class _MakeDcrSection extends StatelessWidget {
           const _EmptySectionCard(message: 'Loading plans for selected date...')
         else if (viewModel.planMeetErrorMessage != null)
           _EmptySectionCard(message: viewModel.planMeetErrorMessage!)
-        else if (viewModel.planMeetEntries.isEmpty)
+        else if (pendingPlanEntries.isEmpty)
           _EmptySectionCard(
             message:
                 'No plan entry available for ${viewModel.formatShortDate(selectedDate)}.',
@@ -264,10 +294,10 @@ class _MakeDcrSection extends StatelessWidget {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: viewModel.planMeetEntries.length,
+            itemCount: pendingPlanEntries.length,
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (BuildContext context, int index) {
-              final PlanMeetEntry entry = viewModel.planMeetEntries[index];
+              final PlanMeetEntry entry = pendingPlanEntries[index];
               final CustomerProfile profile = viewModel
                   .getCustomerProfileForEntry(entry);
 
@@ -591,10 +621,7 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(message);
     } on NetworkException catch (error) {
       if (!mounted) {
         return;

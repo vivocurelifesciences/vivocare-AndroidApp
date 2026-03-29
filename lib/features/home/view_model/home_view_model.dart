@@ -21,6 +21,7 @@ class HomeViewModel extends ChangeNotifier {
   int _selectedMenuIndex = homeMenuIndex;
   final List<PlanMeetEntry> _planMeetEntries = <PlanMeetEntry>[];
   final List<DcrEntry> _apiDcrEntries = <DcrEntry>[];
+  final Set<String> _recentlyCreatedDcrPlanIds = <String>{};
   final NetworkClient _networkClient = NetworkClient(
     scheme: ApiConfig.scheme,
     host: ApiConfig.host,
@@ -152,6 +153,25 @@ class HomeViewModel extends ChangeNotifier {
 
   List<PlanMeetEntry> get planMeetEntries =>
       List<PlanMeetEntry>.unmodifiable(_planMeetEntries);
+
+  List<PlanMeetEntry> get pendingPlanMeetEntriesForDcr {
+    final Set<String> completedPlanIds = <String>{
+      ..._recentlyCreatedDcrPlanIds,
+      ..._apiDcrEntries
+          .map((DcrEntry entry) => entry.planId.trim())
+          .where((String item) => item.isNotEmpty),
+    };
+
+    if (completedPlanIds.isEmpty) {
+      return List<PlanMeetEntry>.unmodifiable(_planMeetEntries);
+    }
+
+    return List<PlanMeetEntry>.unmodifiable(
+      _planMeetEntries.where((PlanMeetEntry entry) {
+        return !completedPlanIds.contains(entry.id.trim());
+      }),
+    );
+  }
 
   List<DcrEntry> get dcrEntries {
     final Map<String, DcrEntry> entriesByKey = <String, DcrEntry>{};
@@ -356,6 +376,7 @@ class HomeViewModel extends ChangeNotifier {
     _selectedMenuIndex = homeMenuIndex;
     _planMeetEntries.clear();
     _apiDcrEntries.clear();
+    _recentlyCreatedDcrPlanIds.clear();
     _upcomingEvents = <UpcomingEvent>[];
     _upcomingEventsErrorMessage = null;
     _upcomingEventsSectionLabel = 'Birthdays & Anniversaries';
@@ -525,6 +546,8 @@ class HomeViewModel extends ChangeNotifier {
       body: body,
     )).data;
 
+    _recentlyCreatedDcrPlanIds.add(trimmedPlanId);
+    await fetchPlanMeetEntries(visitDate: _currentPlanMeetDate);
     await fetchDcrEntries(
       todayOnly: _isTodayDcrFilter,
       startDate: _dcrStartDate,

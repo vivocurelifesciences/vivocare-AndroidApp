@@ -36,18 +36,14 @@ class _SplashScreenState extends State<SplashScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const AppLogo(size: 114, showTagline: true),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Vivocure',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  const AppLogo(size: 132, showTagline: true),
+                  const SizedBox(height: 20),
                   Text(
                     'Preparing your field workspace',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   const SizedBox(

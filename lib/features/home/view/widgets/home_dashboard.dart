@@ -149,7 +149,10 @@ class _HeaderSection extends StatelessWidget {
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool stacked = constraints.maxWidth < 620;
             final Widget greetingBlock = _HeaderGreeting(viewModel: viewModel);
-            final Widget dateBlock = _HeaderDatePanel(viewModel: viewModel);
+            final Widget brandBlock = _HeaderBrandPanel(
+              viewModel: viewModel,
+              compact: compact,
+            );
 
             if (stacked) {
               return Column(
@@ -157,7 +160,7 @@ class _HeaderSection extends StatelessWidget {
                 children: [
                   greetingBlock,
                   const SizedBox(height: 14),
-                  dateBlock,
+                  brandBlock,
                 ],
               );
             }
@@ -165,9 +168,9 @@ class _HeaderSection extends StatelessWidget {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 5, child: greetingBlock),
+                Expanded(flex: 4, child: greetingBlock),
                 const SizedBox(width: 18),
-                Expanded(flex: 3, child: dateBlock),
+                Expanded(flex: 3, child: brandBlock),
               ],
             );
           },
@@ -253,16 +256,17 @@ class _HeaderGreeting extends StatelessWidget {
   }
 }
 
-class _HeaderDatePanel extends StatelessWidget {
-  const _HeaderDatePanel({required this.viewModel});
+class _HeaderBrandPanel extends StatelessWidget {
+  const _HeaderBrandPanel({required this.viewModel, required this.compact});
 
   final HomeViewModel viewModel;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 14 : 16),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(22),

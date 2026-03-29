@@ -64,6 +64,7 @@ flutter:
 
   assets:
     - assets/images/vivocure_logo.jpeg
+    - assets/images/presentation.jpeg
     - assets/presentations/ilovepdf_merged.pdf
     - assets/presentations/ilovepdf_merged_compat.pdf
     - assets/presentations/ilovepdf_merged_flat.pdf

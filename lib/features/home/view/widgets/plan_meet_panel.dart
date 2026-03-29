@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
+import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_panel.dart';
 import 'package:vivocure/features/home/view/dcr_list_screen.dart';
 import 'package:vivocure/features/home/view_model/home_view_model.dart';
@@ -114,9 +115,10 @@ class PlanMeetPanel extends StatelessWidget {
                                   _PlanMeetAddDialog(viewModel: viewModel),
                             );
                             if (context.mounted && message != null) {
-                              ScaffoldMessenger.of(
-                                context,
-                              ).showSnackBar(SnackBar(content: Text(message)));
+                              await AppAlertDialog.showSuccess(
+                                context: context,
+                                message: message,
+                              );
                             }
                           },
                           icon: const Icon(Icons.add, size: 18),
@@ -134,12 +136,18 @@ class PlanMeetPanel extends StatelessWidget {
                             ),
                           ),
                           onPressed: () async {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    DcrListScreen(viewModel: viewModel),
-                              ),
-                            );
+                            final bool? didCreateDcr =
+                                await Navigator.of(context).push<bool>(
+                                  MaterialPageRoute<bool>(
+                                    builder: (_) =>
+                                        DcrListScreen(viewModel: viewModel),
+                                  ),
+                                );
+                            if (context.mounted && didCreateDcr == true) {
+                              await viewModel.fetchPlanMeetEntries(
+                                visitDate: viewModel.currentPlanMeetDate,
+                              );
+                            }
                           },
                           icon: const Icon(
                             Icons.description_outlined,
@@ -269,8 +277,7 @@ class _PlanEntryCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${entry.typeLabel}'
-                    '${profile.code.isEmpty ? '' : ' • ${profile.code}'}'
+                    '${profile.code.isEmpty ? '' : ' ${profile.code}'}'
                     ' • ${viewModel.formatShortDate(entry.visitDate)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -291,6 +298,17 @@ class _PlanEntryCard extends StatelessWidget {
                         label: 'Expected',
                         value: _displayValue(profile.expectedSupportValue),
                       ),
+                      if (entry.isDoctor &&
+                          profile.qualification.trim().isNotEmpty)
+                        _MetricPill(
+                          label: 'Qualification',
+                          value: _displayValue(profile.qualification),
+                        ),
+                      if (profile.area.trim().isNotEmpty)
+                        _MetricPill(
+                          label: 'Area',
+                          value: _displayValue(profile.area),
+                        ),
                     ],
                   ),
                 ],
@@ -656,6 +674,7 @@ class _MedicinePresentationScreenState
       title: 'Vivocure',
       assetPath: 'assets/images/vivocure_logo.jpeg',
     ),
+    const _PresentationSlide(title: 'Company Introduction', companyIntro: true),
     ...widget.presentations.map(
       (MedicinePresentation item) => _PresentationSlide(
         title: item.code.isEmpty ? item.name : '${item.name} (${item.code})',
@@ -827,6 +846,10 @@ class _PresentationActionButton extends StatelessWidget {
 
 extension on _MedicinePresentationScreenState {
   Widget _buildSlideImage(_PresentationSlide slide) {
+    if (slide.companyIntro) {
+      return _buildCompanyIntroSlide();
+    }
+
     if (slide.assetPath.isNotEmpty) {
       return SizedBox.expand(
         child: Image.asset(
@@ -872,6 +895,16 @@ extension on _MedicinePresentationScreenState {
     }
 
     return _buildSlideFallback(slide.title);
+  }
+
+  Widget _buildCompanyIntroSlide() {
+    return SizedBox.expand(
+      child: Image.asset(
+        'assets/images/presentation.jpeg',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+      ),
+    );
   }
 
   Widget _buildSlideFallback(String title) {
@@ -1062,12 +1095,14 @@ class _PresentationSlide {
     this.assetPath = '',
     this.localImagePath = '',
     this.imageUrl = '',
+    this.companyIntro = false,
   });
 
   final String title;
   final String assetPath;
   final String localImagePath;
   final String imageUrl;
+  final bool companyIntro;
 }
 
 class _PlanMeetAddDialog extends StatefulWidget {

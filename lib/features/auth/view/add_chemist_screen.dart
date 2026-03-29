@@ -4,6 +4,7 @@ import 'package:vivocure/core/config/api_config.dart';
 import 'package:vivocure/core/network/network_client.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
 
@@ -53,8 +54,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   bool _showValidationErrors = false;
   List<_ChemistRecord> _chemistRecords = <_ChemistRecord>[];
   _ChemistRecord? _selectedChemist;
-  String? _centerMessage;
-  bool _isCenterMessageError = false;
 
   @override
   void initState() {
@@ -644,25 +643,16 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     return null;
   }
 
-  void _showCenterMessage(String message, {bool isError = false}) {
+  Future<void> _showCenterMessage(String message, {bool isError = false}) {
     if (!mounted) {
-      return;
+      return Future<void>.value();
     }
 
-    setState(() {
-      _centerMessage = message;
-      _isCenterMessageError = isError;
-    });
-
-    Future<void>.delayed(const Duration(seconds: 2), () {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _centerMessage = null;
-        _isCenterMessageError = false;
-      });
-    });
+    return AppAlertDialog.show(
+      context: context,
+      message: message,
+      type: isError ? AppAlertType.error : AppAlertType.success,
+    );
   }
 
   Widget _buildSurface({required Widget child, Key? key}) {
@@ -1086,41 +1076,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                       child: Container(
                         color: Colors.black.withValues(alpha: 0.3),
                         child: const Center(child: CircularProgressIndicator()),
-                      ),
-                    ),
-                  ),
-                if (_centerMessage != null)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _isCenterMessageError
-                                  ? const Color(0xFFFFF2F2)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _isCenterMessageError
-                                    ? const Color(0xFFFFC9C9)
-                                    : const Color(0xFFE3EAF3),
-                              ),
-                            ),
-                            child: Text(
-                              _centerMessage!,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
                       ),
                     ),
                   ),

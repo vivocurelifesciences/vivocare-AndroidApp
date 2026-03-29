@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
+import 'package:vivocure/core/widgets/app_logo.dart';
 import 'package:vivocure/core/widgets/app_panel.dart';
 import 'package:vivocure/features/home/model/home_menu_item.dart';
 
@@ -16,8 +17,6 @@ class HomeSidebar extends StatelessWidget {
   final double width;
   final ValueChanged<int> onItemTap;
   final bool compact;
-  static const String _sidebarLogoAsset = 'assets/images/vivocure_logo.jpeg';
-
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -39,19 +38,12 @@ class HomeSidebar extends StatelessWidget {
                 width: double.infinity,
                 height: compact ? 88 : 128,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF123F70), Color(0xFF1F78CC)],
-                  ),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: AppColors.borderStrong),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  _sidebarLogoAsset,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  filterQuality: FilterQuality.high,
+                child: Center(
+                  child: AppLogo(size: compact ? 56 : 72, showTagline: true),
                 ),
               ),
               const SizedBox(height: 16),

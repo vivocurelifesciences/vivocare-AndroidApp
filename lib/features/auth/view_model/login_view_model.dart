@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vivocure/app/router/app_router.dart';
@@ -70,16 +72,12 @@ class LoginViewModel extends ChangeNotifier {
         refreshToken: response.data.refreshToken,
         tokenType: response.data.tokenType,
       );
-      try {
-        final AuthSession session = AuthSession(
-          accessToken: response.data.accessToken,
-          refreshToken: response.data.refreshToken,
-          tokenType: response.data.tokenType,
-        );
-        await ProductCacheService.syncProductsAfterLogin(session: session);
-      } catch (error) {
-        debugPrintSynchronously('[PRODUCTS] Login-time sync failed: $error');
-      }
+      final AuthSession session = AuthSession(
+        accessToken: response.data.accessToken,
+        refreshToken: response.data.refreshToken,
+        tokenType: response.data.tokenType,
+      );
+      unawaited(_syncProductsInBackground(session));
       final String resolvedName = response.data.user.fullName.isNotEmpty
           ? response.data.user.fullName
           : (response.data.username.isEmpty
@@ -125,6 +123,14 @@ class LoginViewModel extends ChangeNotifier {
     }
     usernameController.text = credentials.username;
     passwordController.text = credentials.password;
+  }
+
+  Future<void> _syncProductsInBackground(AuthSession session) async {
+    try {
+      await ProductCacheService.syncProductsInBackground(session: session);
+    } catch (error) {
+      debugPrintSynchronously('[PRODUCTS] Background sync failed: $error');
+    }
   }
 
   @override
