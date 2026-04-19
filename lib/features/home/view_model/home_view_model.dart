@@ -10,7 +10,7 @@ import 'package:vivocure/features/home/model/home_menu_item.dart';
 class HomeViewModel extends ChangeNotifier {
   static const int homeMenuIndex = 0;
   static const int planMeetMenuIndex = 1;
-  static const int performanceMenuIndex = 2;
+  static const int executionMenuIndex = 2;
   static const int addDoctorMenuIndex = 3;
   static const int addChemistMenuIndex = 4;
   static const int logoutMenuIndex = 5;
@@ -55,11 +55,11 @@ class HomeViewModel extends ChangeNotifier {
       isActive: _selectedMenuIndex == homeMenuIndex,
     ),
     HomeMenuItem(
-      label: 'Plan & Meet',
+      label: 'Planning',
       icon: Icons.event_note_outlined,
       isActive: _selectedMenuIndex == planMeetMenuIndex,
     ),
-    const HomeMenuItem(label: 'Performance', icon: Icons.trending_up_outlined),
+    const HomeMenuItem(label: 'Execution', icon: Icons.trending_up_outlined),
     const HomeMenuItem(label: 'Add Doctor', icon: Icons.person_add_outlined),
     const HomeMenuItem(
       label: 'Add Chemist',
@@ -254,7 +254,7 @@ class HomeViewModel extends ChangeNotifier {
       _upcomingEventsErrorMessage = error.message;
     } catch (_) {
       _upcomingEvents = <UpcomingEvent>[];
-      _upcomingEventsErrorMessage = 'Unable to load upcoming events.';
+      _upcomingEventsErrorMessage = 'Unable to load Birthdays & Anniversaries.';
     } finally {
       _isUpcomingEventsLoading = false;
       notifyListeners();

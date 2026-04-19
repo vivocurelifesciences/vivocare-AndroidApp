@@ -989,11 +989,11 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
               ),
               _FormTextField(
                 controller: _experienceYearsController,
-                label: 'Experience Years',
+                label: 'No. of years practicing',
                 keyboardType: TextInputType.number,
                 validator: (String? value) => _validateNonNegativeInteger(
                   value,
-                  fieldLabel: 'Experience years',
+                  fieldLabel: 'No. of years practicing',
                 ),
               ),
               _FormTextField(controller: _stateController, label: 'State'),

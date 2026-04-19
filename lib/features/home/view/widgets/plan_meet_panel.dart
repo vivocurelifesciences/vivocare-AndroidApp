@@ -82,7 +82,7 @@ class PlanMeetPanel extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Plan & Meet',
+                      'Planning',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(fontSize: 24, fontWeight: FontWeight.w700),
                     ),

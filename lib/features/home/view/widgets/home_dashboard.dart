@@ -328,7 +328,7 @@ class _TodayPlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _DashboardCard(
-      title: "Today's Plan",
+      title: "Today's Objectives (Aaj ka Plan)",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -520,28 +520,12 @@ class _UpcomingEventsPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Upcoming Events',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F7FC),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
               viewModel.upcomingEventsSectionLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ),
-          const SizedBox(height: 14),
           if (viewModel.isUpcomingEventsLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),

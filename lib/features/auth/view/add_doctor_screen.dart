@@ -46,7 +46,19 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     'Dermatologist',
   ];
 
-  static const List<String> _categoryOptions = <String>['A', 'B', 'C', 'D'];
+  static const List<String> _categoryOptions = <String>[
+    'Core',
+    'Non-Core',
+    'Super-Core',
+  ];
+  static const List<String> _doctorTypeOptions = <String>[
+    'PRESCRIBER',
+    'DISPENSER',
+  ];
+  static const Map<String, String> _doctorTypeLabels = <String, String>{
+    'PRESCRIBER': 'Prescriber',
+    'DISPENSER': 'Dispenser',
+  };
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final GlobalKey _formSectionKey = GlobalKey();
@@ -60,6 +72,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   final TextEditingController _expectedSupportValueController =
       TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _areaController = TextEditingController();
@@ -89,6 +102,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   String? _selectedQualification;
   String? _selectedSpeciality;
   String? _selectedCategory;
+  String? _selectedDoctorType;
 
   @override
   void initState() {
@@ -109,6 +123,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _supportValueController.dispose();
     _expectedSupportValueController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
     _stateController.dispose();
     _cityController.dispose();
     _areaController.dispose();
@@ -228,6 +243,18 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     final String normalized = trimmed.replaceAll(RegExp(r'\s+'), '');
     if (!RegExp(r'^[0-9]{10,15}$').hasMatch(normalized)) {
       return 'Enter a valid phone number.';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    final String trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final RegExp emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    if (!emailPattern.hasMatch(trimmed)) {
+      return 'Enter a valid email address.';
     }
     return null;
   }
@@ -885,6 +912,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _supportValueController.text = doctor.supportValue;
     _expectedSupportValueController.text = doctor.expectedSupportValue;
     _phoneController.text = doctor.phone;
+    _emailController.text = doctor.email;
     _stateController.text = doctor.state;
     _cityController.text = doctor.city;
     _areaController.text = doctor.area;
@@ -902,6 +930,10 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       _specialityOptions,
     );
     _selectedCategory = _normalizeOption(doctor.category, _categoryOptions);
+    _selectedDoctorType = _normalizeOption(
+      doctor.doctorType,
+      _doctorTypeOptions,
+    );
     _selectedChemists = _mergeChemistSelections(
       selected: doctor.chemists,
       available: _availableChemists,
@@ -916,6 +948,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _supportValueController.clear();
     _expectedSupportValueController.clear();
     _phoneController.clear();
+    _emailController.clear();
     _stateController.clear();
     _cityController.clear();
     _areaController.clear();
@@ -927,6 +960,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _selectedQualification = null;
     _selectedSpeciality = null;
     _selectedCategory = null;
+    _selectedDoctorType = null;
     _selectedChemists = <_DoctorChemistOption>[];
     _showValidationErrors = false;
   }
@@ -936,6 +970,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     bool omitEmptyFields = false,
   }) {
     final Map<String, dynamic> body = <String, dynamic>{
+      'doctor_type': _selectedDoctorType ?? '',
       'first_name': _textOrEmpty(_firstNameController.text),
       'middle_name': _textOrEmpty(_middleNameController.text),
       'last_name': _textOrEmpty(_lastNameController.text),
@@ -948,6 +983,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
         _expectedSupportValueController.text,
       ),
       'phone': _textOrEmpty(_phoneController.text),
+      'email': _textOrEmpty(_emailController.text),
       'state': _textOrEmpty(_stateController.text),
       'city': _textOrEmpty(_cityController.text),
       'area': _textOrEmpty(_areaController.text),
@@ -981,10 +1017,18 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   }
 
   String? _normalizeOption(String value, List<String> options) {
-    final String normalized = value.trim().toUpperCase();
-    if (options.contains(normalized)) {
-      return normalized;
+    final String incoming = value.trim();
+    if (incoming.isEmpty) {
+      return null;
     }
+
+    final String incomingLower = incoming.toLowerCase();
+    for (final String option in options) {
+      if (option.trim().toLowerCase() == incomingLower) {
+        return option;
+      }
+    }
+
     return null;
   }
 
@@ -1361,7 +1405,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                   'doctor-category-${_selectedCategory ?? ''}',
                 ),
                 initialValue: _selectedCategory,
-                decoration: const InputDecoration(labelText: 'Category'),
+                decoration: const InputDecoration(labelText: 'Favorite'),
                 items: _categoryOptions
                     .map(
                       (String category) => DropdownMenuItem<String>(
@@ -1373,6 +1417,27 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                 onChanged: (String? value) {
                   setState(() {
                     _selectedCategory = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: ValueKey<String?>(
+                  'doctor-type-${_selectedDoctorType ?? ''}',
+                ),
+                initialValue: _selectedDoctorType,
+                decoration: const InputDecoration(labelText: 'Doctor Type'),
+                items: _doctorTypeOptions
+                    .map(
+                      (String option) => DropdownMenuItem<String>(
+                        value: option,
+                        child: Text(_doctorTypeLabels[option] ?? option),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (String? value) {
+                  setState(() {
+                    _selectedDoctorType = value;
                   });
                 },
               ),
@@ -1479,6 +1544,12 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                 keyboardType: TextInputType.phone,
                 validator: _validateOptionalPhone,
               ),
+              _FormTextField(
+                controller: _emailController,
+                label: 'Email',
+                keyboardType: TextInputType.emailAddress,
+                validator: _validateEmail,
+              ),
               _FormTextField(controller: _stateController, label: 'State'),
               _FormTextField(controller: _cityController, label: 'City'),
               _FormTextField(controller: _areaController, label: 'Area'),
@@ -1499,11 +1570,11 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               ),
               _FormTextField(
                 controller: _experienceYearsController,
-                label: 'Experience Years',
+                label: 'No. of years practicing',
                 keyboardType: TextInputType.number,
                 validator: (String? value) => _validateNonNegativeInteger(
                   value,
-                  fieldLabel: 'Experience years',
+                  fieldLabel: 'No. of years practicing',
                 ),
               ),
               if (isEditMode) const SizedBox(height: 16),
@@ -1709,10 +1780,12 @@ class _DoctorRecord {
     required this.qualification,
     required this.speciality,
     required this.category,
+    required this.doctorType,
     required this.potential,
     required this.supportValue,
     required this.expectedSupportValue,
     required this.phone,
+    required this.email,
     required this.state,
     required this.city,
     required this.area,
@@ -1732,10 +1805,12 @@ class _DoctorRecord {
   final String qualification;
   final String speciality;
   final String category;
+  final String doctorType;
   final String potential;
   final String supportValue;
   final String expectedSupportValue;
   final String phone;
+  final String email;
   final String state;
   final String city;
   final String area;
@@ -1772,10 +1847,12 @@ class _DoctorRecord {
       qualification: _asString(json['qualification']),
       speciality: _asString(json['speciality']),
       category: _asString(json['category']),
+      doctorType: _asString(json['doctor_type']),
       potential: _asString(json['potential']),
       supportValue: _asString(json['support_value']),
       expectedSupportValue: _asString(json['expected_support_value']),
       phone: _asString(json['phone']),
+      email: _asString(json['email']),
       state: _asString(json['state']),
       city: _asString(json['city']),
       area: _asString(json['area']),
