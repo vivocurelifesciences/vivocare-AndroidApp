@@ -338,16 +338,53 @@ class _CustomerDetailsSheet extends StatefulWidget {
 
 class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
   final Set<String> _selectedMedicineIds = <String>{};
+  static const int _defaultPresentationCount = 3;
+
+  List<MedicinePresentation> get _defaultMedicines {
+    return widget.viewModel.medicinePresentations
+        .take(_defaultPresentationCount)
+        .toList(growable: false);
+  }
+
+  Set<String> get _defaultMedicineIds {
+    return _defaultMedicines
+        .map((MedicinePresentation item) => item.id.trim())
+        .where((String item) => item.isNotEmpty)
+        .toSet();
+  }
+
+  List<MedicinePresentation> get _additionalMedicineOptions {
+    final Set<String> defaultIds = _defaultMedicineIds;
+    return widget.viewModel.medicinePresentations
+        .where(
+          (MedicinePresentation item) => !defaultIds.contains(item.id.trim()),
+        )
+        .toList(growable: false);
+  }
+
+  List<MedicinePresentation> get _additionalSelectedMedicines {
+    final Set<String> defaultIds = _defaultMedicineIds;
+    return widget.viewModel
+        .getMedicinePresentationsByIds(_selectedMedicineIds)
+        .where(
+          (MedicinePresentation item) => !defaultIds.contains(item.id.trim()),
+        )
+        .toList(growable: false);
+  }
 
   List<MedicinePresentation> get _selectedMedicines {
-    return widget.viewModel.getMedicinePresentationsByIds(_selectedMedicineIds);
+    final Set<String> effectiveIds = <String>{
+      ..._defaultMedicineIds,
+      ..._selectedMedicineIds,
+    };
+    return widget.viewModel.getMedicinePresentationsByIds(effectiveIds);
   }
 
   Future<void> _openMedicineSelector() async {
     final Set<String>? selectedIds = await showDialog<Set<String>>(
       context: context,
       builder: (_) => _MedicineSelectionDialog(
-        products: widget.viewModel.medicinePresentations,
+        products: _additionalMedicineOptions,
         initialSelectedIds: _selectedMedicineIds,
       ),
     );
@@ -505,7 +542,7 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
                         children: [
                           Expanded(
                             child: Text(
-                              'Selected Products (${_selectedMedicines.length})',
+                              'Additional Products (${_additionalSelectedMedicines.length})',
                               style: Theme.of(context).textTheme.titleSmall
                                   ?.copyWith(
                                     fontSize: 14,
@@ -524,24 +561,11 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      if (_selectedMedicines.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF7FAFD),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: const Text(
-                            'Select one or more products to view the presentation.',
-                          ),
-                        )
-                      else
+                      if (_additionalSelectedMedicines.isNotEmpty)
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: _selectedMedicines
+                          children: _additionalSelectedMedicines
                               .map(
                                 (MedicinePresentation item) => Chip(
                                   label: Text(
@@ -583,15 +607,6 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
                 label: const Text('View Presentation'),
               ),
             ),
-            if (_selectedMedicineIds.isEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Select at least one product to view the presentation.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
-              ),
-            ],
           ],
         ),
       ),
