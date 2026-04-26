@@ -1,6 +1,6 @@
 class ApiConfig {
   static const String scheme = 'https';
-  static const String host = 'pre-prod-api.vivocurelifesciences.com';
+  static const String host = 'prod-api.vivocurelifesciences.com';
   static const String apiVersionPath = '/api/v1';
 
   static bool get isLowerEnvironment {
