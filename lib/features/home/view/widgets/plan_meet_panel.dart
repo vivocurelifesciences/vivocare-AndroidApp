@@ -669,20 +669,15 @@ class _MedicinePresentationScreenState
   int _activeSlideIndex = 0;
   late final PageController _pageController;
 
-  List<_PresentationSlide> get _slides => <_PresentationSlide>[
-    const _PresentationSlide(
-      title: 'Vivocure',
-      assetPath: 'assets/images/vivocure_logo.jpeg',
-    ),
-    const _PresentationSlide(title: 'Company Introduction', companyIntro: true),
-    ...widget.presentations.map(
-      (MedicinePresentation item) => _PresentationSlide(
-        title: item.code.isEmpty ? item.name : '${item.name} (${item.code})',
-        localImagePath: item.localImagePath,
-        imageUrl: item.imageUrl,
-      ),
-    ),
-  ];
+  List<_PresentationSlide> get _slides => widget.presentations
+      .map(
+        (MedicinePresentation item) => _PresentationSlide(
+          title: item.code.isEmpty ? item.name : '${item.name} (${item.code})',
+          localImagePath: item.localImagePath,
+          imageUrl: item.imageUrl,
+        ),
+      )
+      .toList(growable: false);
 
   @override
   void initState() {
@@ -846,20 +841,6 @@ class _PresentationActionButton extends StatelessWidget {
 
 extension on _MedicinePresentationScreenState {
   Widget _buildSlideImage(_PresentationSlide slide) {
-    if (slide.companyIntro) {
-      return _buildCompanyIntroSlide();
-    }
-
-    if (slide.assetPath.isNotEmpty) {
-      return SizedBox.expand(
-        child: Image.asset(
-          slide.assetPath,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-        ),
-      );
-    }
-
     if (slide.localImagePath.isNotEmpty &&
         File(slide.localImagePath).existsSync()) {
       return SizedBox.expand(
@@ -895,16 +876,6 @@ extension on _MedicinePresentationScreenState {
     }
 
     return _buildSlideFallback(slide.title);
-  }
-
-  Widget _buildCompanyIntroSlide() {
-    return SizedBox.expand(
-      child: Image.asset(
-        'assets/images/presentation.jpeg',
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-      ),
-    );
   }
 
   Widget _buildSlideFallback(String title) {
@@ -1092,17 +1063,13 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
 class _PresentationSlide {
   const _PresentationSlide({
     required this.title,
-    this.assetPath = '',
     this.localImagePath = '',
     this.imageUrl = '',
-    this.companyIntro = false,
   });
 
   final String title;
-  final String assetPath;
   final String localImagePath;
   final String imageUrl;
-  final bool companyIntro;
 }
 
 class _PlanMeetAddDialog extends StatefulWidget {
