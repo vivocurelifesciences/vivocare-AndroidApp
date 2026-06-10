@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:vivocure/core/auth/auth_storage.dart';
-import 'package:vivocure/core/config/api_config.dart';
-import 'package:vivocure/core/network/network_client.dart';
-import 'package:vivocure/core/network/network_exception.dart';
-import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/app_services.dart';
+import 'package:vivocure/core/db/app_database.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
@@ -84,7 +81,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   final TextEditingController _statusController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
-  late final NetworkClient _networkClient;
+  static const int _doctorPageSize = 50;
 
   _DoctorActionMode _mode = _DoctorActionMode.add;
   bool _isSubmitting = false;
@@ -97,7 +94,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   List<_DoctorChemistOption> _availableChemists = <_DoctorChemistOption>[];
   List<_DoctorChemistOption> _selectedChemists = <_DoctorChemistOption>[];
   _DoctorRecord? _selectedDoctor;
-  String? _nextDoctorCursor;
+  bool _hasMoreDoctors = false;
   String _currentDoctorSearch = '';
   String? _selectedQualification;
   String? _selectedSpeciality;
@@ -107,10 +104,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   @override
   void initState() {
     super.initState();
-    _networkClient = NetworkClient(
-      scheme: ApiConfig.scheme,
-      host: ApiConfig.host,
-    );
     _doctorListScrollController.addListener(_handleDoctorListScroll);
   }
 
@@ -134,7 +127,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _statusController.dispose();
     _searchController.dispose();
     _doctorListScrollController.dispose();
-    _networkClient.close();
     super.dispose();
   }
 
@@ -166,7 +158,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       _showValidationErrors = false;
       _searchController.clear();
       _currentDoctorSearch = '';
-      _nextDoctorCursor = null;
+      _hasMoreDoctors = false;
       _isLoadingMoreDoctors = false;
       _doctorRecords = mode == _DoctorActionMode.add
           ? _doctorRecords
@@ -186,8 +178,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       return;
     }
 
-    final String nextCursor = _nextDoctorCursor?.trim() ?? '';
-    if (nextCursor.isEmpty) {
+    if (!_hasMoreDoctors) {
       return;
     }
 
@@ -195,15 +186,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     if (position.extentAfter < 220) {
       _loadDoctors(loadMore: true);
     }
-  }
-
-  Future<AuthSession?> _loadSessionOrShowError() async {
-    final AuthSession session = await AuthStorage.loadSession();
-    if (!session.hasAccessToken) {
-      _showCenterMessage('Session expired. Please login again.', isError: true);
-      return null;
-    }
-    return session;
   }
 
   Future<void> _pickDate(TextEditingController controller) async {
@@ -315,23 +297,20 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       return;
     }
 
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
-
     setState(() {
       _isSubmitting = true;
     });
 
     try {
       if (_mode == _DoctorActionMode.add) {
-        await _createDoctor(session);
+        await _createDoctor();
       } else {
-        await _updateDoctor(session, _selectedDoctor!.id);
+        await _updateDoctor(_selectedDoctor!.id);
       }
-    } on NetworkException catch (error) {
+    } on StateError catch (error) {
       _showCenterMessage(error.message, isError: true);
+    } on Exception catch (error) {
+      _showCenterMessage(error.toString(), isError: true);
     } catch (_) {
       _showCenterMessage('Unable to save doctor right now.', isError: true);
     } finally {
@@ -343,14 +322,9 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     }
   }
 
-  Future<void> _createDoctor(AuthSession session) async {
-    final NetworkResponse<dynamic> response = await _networkClient.post(
-      '${ApiConfig.apiVersionPath}/doctors',
-      headers: _authHeaders(session),
-      body: _buildDoctorRequestBody(
-        includeStatus: false,
-        omitEmptyFields: true,
-      ),
+  Future<void> _createDoctor() async {
+    await AppServices.doctors.createDoctor(
+      _buildDoctorFields(omitEmptyFields: true),
     );
 
     if (!mounted) {
@@ -361,35 +335,21 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       _clearForm();
     });
 
-    _showCenterMessage(
-      _extractResponseMessage(response.data) ?? 'Doctor saved successfully',
-    );
+    _showCenterMessage('Doctor saved successfully');
   }
 
-  Future<void> _updateDoctor(AuthSession session, String doctorId) async {
-    final NetworkResponse<dynamic> response = await _networkClient.put(
-      '${ApiConfig.apiVersionPath}/doctors/$doctorId',
-      headers: _authHeaders(session),
-      body: _buildDoctorRequestBody(includeStatus: true),
-    );
+  Future<void> _updateDoctor(String doctorId) async {
+    await AppServices.doctors.updateDoctor(doctorId, _buildDoctorFields());
 
-    _showCenterMessage(
-      _extractResponseMessage(response.data) ?? 'Doctor updated successfully',
-    );
+    _showCenterMessage('Doctor updated successfully');
     await _loadDoctors(search: _searchController.text);
   }
 
   Future<void> _loadDoctors({String search = '', bool loadMore = false}) async {
     if (loadMore) {
-      final String nextCursor = _nextDoctorCursor?.trim() ?? '';
-      if (_isLoadingDoctors || _isLoadingMoreDoctors || nextCursor.isEmpty) {
+      if (_isLoadingDoctors || _isLoadingMoreDoctors || !_hasMoreDoctors) {
         return;
       }
-    }
-
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
     }
 
     final String trimmedSearch = loadMore
@@ -402,36 +362,25 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       } else {
         _isLoadingDoctors = true;
         _currentDoctorSearch = trimmedSearch;
-        _nextDoctorCursor = null;
+        _hasMoreDoctors = false;
       }
     });
 
     try {
-      final bool isSearchRequest = trimmedSearch.isNotEmpty;
-      final Map<String, dynamic> query = <String, dynamic>{'sort_order': 'asc'};
-      if (isSearchRequest) {
-        query['search_text'] = trimmedSearch;
-      } else {
-        query['limit'] = 100;
-      }
-      final String nextCursor = _nextDoctorCursor?.trim() ?? '';
-      if (loadMore && nextCursor.isNotEmpty) {
-        query['cursor'] = nextCursor;
-      }
-
-      final NetworkResponse<dynamic> response = await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/doctors',
-        headers: _authHeaders(session),
-        queryParameters: query,
+      final int offset = loadMore ? _doctorRecords.length : 0;
+      final List<Doctor> rows = await AppServices.doctors.searchDoctors(
+        searchText: trimmedSearch.isEmpty ? null : trimmedSearch,
+        limit: _doctorPageSize,
+        offset: offset,
       );
-
-      final _DoctorListPage page = _parseDoctorPage(response.data);
+      final List<_DoctorRecord> doctors = rows
+          .map(_DoctorRecord.fromRow)
+          .toList(growable: false);
 
       if (!mounted) {
         return;
       }
 
-      final String resolvedNextCursor = page.nextCursor.trim();
       setState(() {
         if (loadMore) {
           final Set<String> existingIds = _doctorRecords
@@ -439,23 +388,22 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               .toSet();
           _doctorRecords = <_DoctorRecord>[
             ..._doctorRecords,
-            ...page.doctors.where(
+            ...doctors.where(
               (_DoctorRecord item) => !existingIds.contains(item.id),
             ),
           ];
         } else {
-          _doctorRecords = page.doctors;
+          _doctorRecords = doctors;
         }
-        _nextDoctorCursor =
-            resolvedNextCursor.isEmpty || resolvedNextCursor == nextCursor
-            ? null
-            : resolvedNextCursor;
+        _hasMoreDoctors = rows.length >= _doctorPageSize;
       });
       if (!loadMore && _doctorListScrollController.hasClients) {
         _doctorListScrollController.jumpTo(0);
       }
-    } on NetworkException catch (error) {
+    } on StateError catch (error) {
       _showCenterMessage(error.message, isError: true);
+    } on Exception catch (error) {
+      _showCenterMessage(error.toString(), isError: true);
     } catch (_) {
       _showCenterMessage('Unable to load doctor list.', isError: true);
     } finally {
@@ -479,24 +427,24 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       return true;
     }
 
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return false;
-    }
-
     setState(() {
       _isLoadingChemistOptions = true;
     });
 
     try {
-      final NetworkResponse<dynamic> response = await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/plans/doctor-chemist-dropdown',
-        headers: _authHeaders(session),
-      );
-
-      final List<_DoctorChemistOption> chemists = _parseChemistDropdownOptions(
-        response.data,
-      );
+      final List<Chemist> rows = await AppServices.chemists.dropdownOptions();
+      final List<_DoctorChemistOption> chemists = rows
+          .map(
+            (Chemist row) => _DoctorChemistOption(
+              id: row.id,
+              name: row.fullName,
+              code: (row.chemistCode == null || row.chemistCode!.isEmpty)
+                  ? 'PENDING'
+                  : row.chemistCode!,
+              area: row.area ?? '',
+            ),
+          )
+          .toList(growable: false);
 
       if (!mounted) {
         return false;
@@ -510,9 +458,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
         );
       });
       return true;
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
-      return false;
     } catch (_) {
       _showCenterMessage('Unable to load chemist list.', isError: true);
       return false;
@@ -720,24 +665,40 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
   }
 
   Future<void> _handleEditDoctor(_DoctorRecord doctor) async {
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
-
     setState(() {
       _isActionInProgress = true;
     });
 
     try {
-      final NetworkResponse<dynamic> response = await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/doctors/${doctor.id}',
-        headers: _authHeaders(session),
-      );
+      final Doctor? row = await AppServices.doctors.getById(doctor.id);
+      if (row == null) {
+        _showCenterMessage('Unable to load doctor details.', isError: true);
+        return;
+      }
 
-      final _DoctorRecord details = _DoctorRecord.fromJson(
-        _extractEntityMap(response.data),
-      );
+      // Resolve linked chemists from the local DB for the selector chips.
+      final List<String> chemistIds = (row.chemistIds ?? '')
+          .split(',')
+          .map((String id) => id.trim())
+          .where((String id) => id.isNotEmpty)
+          .toList(growable: false);
+      final List<Chemist> linked =
+          await AppServices.chemists.byIds(chemistIds);
+      final List<_DoctorChemistOption> chemistOptions = linked
+          .map(
+            (Chemist item) => _DoctorChemistOption(
+              id: item.id,
+              name: item.fullName,
+              code: (item.chemistCode == null || item.chemistCode!.isEmpty)
+                  ? 'PENDING'
+                  : item.chemistCode!,
+              area: item.area ?? '',
+            ),
+          )
+          .toList(growable: false);
+
+      final _DoctorRecord details =
+          _DoctorRecord.fromRow(row, chemists: chemistOptions);
 
       if (!mounted) {
         return;
@@ -749,8 +710,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       });
 
       _scrollToForm();
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
     } catch (_) {
       _showCenterMessage('Unable to load doctor details.', isError: true);
     } finally {
@@ -772,20 +731,12 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       return;
     }
 
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
-
     setState(() {
       _isActionInProgress = true;
     });
 
     try {
-      final NetworkResponse<dynamic> response = await _networkClient.delete(
-        '${ApiConfig.apiVersionPath}/doctors/${doctor.id}',
-        headers: _authHeaders(session),
-      );
+      await AppServices.doctors.deleteDoctor(doctor.id);
 
       if (!mounted) {
         return;
@@ -801,12 +752,8 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
         }
       });
 
-      _showCenterMessage(
-        _extractResponseMessage(response.data) ?? 'Doctor deleted successfully',
-      );
+      _showCenterMessage('Doctor deleted successfully');
       await _loadDoctors(search: _searchController.text);
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
     } catch (_) {
       _showCenterMessage('Unable to delete doctor right now.', isError: true);
     } finally {
@@ -862,46 +809,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
         curve: Curves.easeOutCubic,
       );
     });
-  }
-
-  _DoctorListPage _parseDoctorPage(dynamic data) {
-    final Map<String, dynamic> root = _asMap(data);
-    final Map<String, dynamic> nested = _asMap(root['data']);
-    final String nextCursor = _asString(nested['next_cursor']);
-
-    Object? rawItems = root['items'];
-    if (rawItems is! List) {
-      rawItems = nested['items'];
-      if (rawItems is! List) {
-        rawItems = nested['data'];
-      }
-    }
-
-    if (rawItems is! List) {
-      rawItems = root['data'];
-    }
-
-    if (rawItems is! List) {
-      return _DoctorListPage(
-        doctors: const <_DoctorRecord>[],
-        nextCursor: nextCursor,
-      );
-    }
-
-    final List<_DoctorRecord> doctors = <_DoctorRecord>[];
-    for (final dynamic item in rawItems) {
-      final _DoctorRecord doctor = _DoctorRecord.fromJson(_asMap(item));
-      if (doctor.id.isNotEmpty) {
-        doctors.add(doctor);
-      }
-    }
-    return _DoctorListPage(doctors: doctors, nextCursor: nextCursor);
-  }
-
-  Map<String, dynamic> _extractEntityMap(dynamic data) {
-    final Map<String, dynamic> root = _asMap(data);
-    final Map<String, dynamic> nested = _asMap(root['data']);
-    return nested.isNotEmpty ? nested : root;
   }
 
   void _applyDoctorToForm(_DoctorRecord doctor) {
@@ -965,10 +872,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     _showValidationErrors = false;
   }
 
-  Map<String, dynamic> _buildDoctorRequestBody({
-    required bool includeStatus,
-    bool omitEmptyFields = false,
-  }) {
+  Map<String, dynamic> _buildDoctorFields({bool omitEmptyFields = false}) {
     final Map<String, dynamic> body = <String, dynamic>{
       'doctor_type': _selectedDoctorType ?? '',
       'first_name': _textOrEmpty(_firstNameController.text),
@@ -997,19 +901,11 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
           .join(','),
     };
 
-    if (includeStatus) {
-      body['status'] = _textOrEmpty(_statusController.text);
-    }
-
     if (omitEmptyFields) {
       body.removeWhere((String key, dynamic value) => value == '');
     }
 
     return body;
-  }
-
-  Map<String, String> _authHeaders(AuthSession session) {
-    return <String, String>{'Authorization': session.authorizationHeader};
   }
 
   String _textOrEmpty(String value) {
@@ -1038,28 +934,6 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
       return '';
     }
     return int.tryParse(trimmed) ?? trimmed;
-  }
-
-  String? _extractResponseMessage(dynamic data) {
-    if (data is String && data.trim().isNotEmpty) {
-      return data.trim();
-    }
-    if (data is List) {
-      for (final dynamic item in data) {
-        final String? message = _extractResponseMessage(item);
-        if (message != null) {
-          return message;
-        }
-      }
-    }
-    final Map<String, dynamic> map = _asMap(data);
-    for (final String key in const <String>['msg', 'message', 'detail']) {
-      final String? message = _extractResponseMessage(map[key]);
-      if (message != null && message.isNotEmpty) {
-        return message;
-      }
-    }
-    return null;
   }
 
   Future<void> _showCenterMessage(String message, {bool isError = false}) {
@@ -1795,8 +1669,53 @@ class _DoctorRecord {
     required this.experienceYears,
     required this.status,
     required this.chemists,
+    this.isSynced = true,
   });
 
+  factory _DoctorRecord.fromRow(
+    Doctor row, {
+    List<_DoctorChemistOption> chemists = const <_DoctorChemistOption>[],
+  }) {
+    return _DoctorRecord(
+      id: row.id,
+      doctorCode: (row.doctorCode == null || row.doctorCode!.isEmpty)
+          ? 'PENDING'
+          : row.doctorCode!,
+      firstName: row.firstName ?? '',
+      middleName: row.middleName ?? '',
+      lastName: row.lastName ?? '',
+      qualification: row.qualification ?? '',
+      speciality: row.speciality ?? '',
+      category: row.category ?? '',
+      doctorType: row.doctorType ?? '',
+      potential: _numToString(row.potential),
+      supportValue: _numToString(row.supportValue),
+      expectedSupportValue: _numToString(row.expectedSupportValue),
+      phone: row.phone ?? '',
+      email: row.email ?? '',
+      state: row.state ?? '',
+      city: row.city ?? '',
+      area: row.area ?? '',
+      country: row.country ?? '',
+      dob: row.dob ?? '',
+      dom: row.dom ?? '',
+      experienceYears: row.experienceYears?.toString() ?? '',
+      status: row.status,
+      chemists: chemists,
+      isSynced: row.localStatus == 'synced',
+    );
+  }
+
+  static String _numToString(double? value) {
+    if (value == null) {
+      return '';
+    }
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+  }
+
+  final bool isSynced;
   final String id;
   final String doctorCode;
   final String firstName;
@@ -1837,44 +1756,8 @@ class _DoctorRecord {
     return '$fullName ($doctorCode)';
   }
 
-  factory _DoctorRecord.fromJson(Map<String, dynamic> json) {
-    return _DoctorRecord(
-      id: _asString(json['id']),
-      doctorCode: _asString(json['doctor_code']),
-      firstName: _asString(json['first_name']),
-      middleName: _asString(json['middle_name']),
-      lastName: _asString(json['last_name']),
-      qualification: _asString(json['qualification']),
-      speciality: _asString(json['speciality']),
-      category: _asString(json['category']),
-      doctorType: _asString(json['doctor_type']),
-      potential: _asString(json['potential']),
-      supportValue: _asString(json['support_value']),
-      expectedSupportValue: _asString(json['expected_support_value']),
-      phone: _asString(json['phone']),
-      email: _asString(json['email']),
-      state: _asString(json['state']),
-      city: _asString(json['city']),
-      area: _asString(json['area']),
-      country: _asString(json['country']),
-      dob: _asDateString(json['dob']),
-      dom: _asDateString(json['dom']),
-      experienceYears: _asString(json['experience_years']),
-      status: _asString(json['status']),
-      chemists: _parseDoctorChemistSelections(
-        rawChemistIds: json['chemist_ids'],
-        rawChemists: json['chemists'],
-      ),
-    );
-  }
 }
 
-class _DoctorListPage {
-  const _DoctorListPage({required this.doctors, required this.nextCursor});
-
-  final List<_DoctorRecord> doctors;
-  final String nextCursor;
-}
 
 class _DoctorChemistOption {
   const _DoctorChemistOption({
@@ -1882,14 +1765,13 @@ class _DoctorChemistOption {
     required this.name,
     required this.code,
     required this.area,
-    this.customerType = 'chemist',
   });
 
   final String id;
   final String name;
   final String code;
   final String area;
-  final String customerType;
+  final String customerType = 'chemist';
 
   String get normalizedType => customerType.trim().toLowerCase();
 
@@ -1901,171 +1783,10 @@ class _DoctorChemistOption {
     return '$resolvedName • $area';
   }
 
-  factory _DoctorChemistOption.fromJson(
-    Map<String, dynamic> json, {
-    String fallbackType = 'chemist',
-  }) {
-    final String firstName = _asString(json['first_name']);
-    final String middleName = _asString(json['middle_name']);
-    final String lastName = _asString(json['last_name']);
-    final String combinedName = <String>[
-      firstName,
-      middleName,
-      lastName,
-    ].where((String value) => value.trim().isNotEmpty).join(' ').trim();
-
-    return _DoctorChemistOption(
-      id: _asString(json['id']).isEmpty
-          ? _asString(json['customer_id'])
-          : _asString(json['id']),
-      name: _asString(json['name']).isEmpty
-          ? (_asString(json['customer_name']).isEmpty
-                ? combinedName
-                : _asString(json['customer_name']))
-          : _asString(json['name']),
-      code: _asString(json['chemist_code']).isEmpty
-          ? (_asString(json['code']).isEmpty
-                ? _asString(json['customer_code'])
-                : _asString(json['code']))
-          : _asString(json['chemist_code']),
-      area: _asString(json['area']),
-      customerType: _asString(json['customer_type']).isEmpty
-          ? fallbackType
-          : _asString(json['customer_type']),
-    );
-  }
 }
 
-List<_DoctorChemistOption> _parseChemistDropdownOptions(dynamic data) {
-  final Map<String, dynamic> root = _asMap(data);
-  final dynamic payload = root['data'] ?? data;
-  final Map<String, dynamic> nested = _asMap(payload);
 
-  List<_DoctorChemistOption> chemists = _parseChemistOptionList(
-    nested['chemists'],
-    fallbackType: 'chemist',
-  );
 
-  if (chemists.isEmpty) {
-    chemists = _parseChemistOptionList(payload)
-        .where((_DoctorChemistOption item) {
-          return item.normalizedType == 'chemist';
-        })
-        .toList(growable: false);
-  }
 
-  final List<_DoctorChemistOption> uniqueChemists = <_DoctorChemistOption>[];
-  final Set<String> seenIds = <String>{};
 
-  for (final _DoctorChemistOption item in chemists) {
-    final String id = item.id.trim();
-    if (id.isEmpty || !seenIds.add(id)) {
-      continue;
-    }
-    uniqueChemists.add(item);
-  }
 
-  uniqueChemists.sort((_DoctorChemistOption a, _DoctorChemistOption b) {
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  });
-
-  return uniqueChemists;
-}
-
-List<_DoctorChemistOption> _parseChemistOptionList(
-  Object? rawData, {
-  String fallbackType = 'chemist',
-}) {
-  if (rawData is! List) {
-    return <_DoctorChemistOption>[];
-  }
-
-  final List<_DoctorChemistOption> chemists = <_DoctorChemistOption>[];
-  for (final dynamic item in rawData) {
-    final _DoctorChemistOption chemist = _DoctorChemistOption.fromJson(
-      _asMap(item),
-      fallbackType: fallbackType,
-    );
-    if (chemist.id.isNotEmpty) {
-      chemists.add(chemist);
-    }
-  }
-
-  return chemists;
-}
-
-List<_DoctorChemistOption> _parseDoctorChemistSelections({
-  required Object? rawChemistIds,
-  required Object? rawChemists,
-}) {
-  final List<_DoctorChemistOption> chemists = _parseChemistOptionList(
-    rawChemists,
-    fallbackType: 'chemist',
-  );
-  final Set<String> seenIds = chemists
-      .map((_DoctorChemistOption item) => item.id)
-      .where((String id) => id.trim().isNotEmpty)
-      .toSet();
-
-  final List<String> chemistIds = _readStringList(rawChemistIds);
-  for (final String chemistId in chemistIds) {
-    final String id = chemistId.trim();
-    if (id.isEmpty || !seenIds.add(id)) {
-      continue;
-    }
-    chemists.add(_DoctorChemistOption(id: id, name: id, code: '', area: ''));
-  }
-
-  return chemists;
-}
-
-Map<String, dynamic> _asMap(Object? value) {
-  if (value is Map<String, dynamic>) {
-    return value;
-  }
-  if (value is Map) {
-    return value.map(
-      (Object? key, Object? item) =>
-          MapEntry<String, dynamic>(key.toString(), item),
-    );
-  }
-  return <String, dynamic>{};
-}
-
-String _asString(Object? value) {
-  if (value is String) {
-    return value.trim();
-  }
-  if (value == null) {
-    return '';
-  }
-  return value.toString().trim();
-}
-
-String _asDateString(Object? value) {
-  final String raw = _asString(value);
-  if (raw.length >= 10) {
-    return raw.substring(0, 10);
-  }
-  return raw;
-}
-
-List<String> _readStringList(Object? value) {
-  if (value is List) {
-    return value
-        .map((Object? item) => _asString(item))
-        .where((String item) => item.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  final String raw = _asString(value);
-  if (raw.isEmpty) {
-    return <String>[];
-  }
-
-  return raw
-      .split(',')
-      .map((String item) => item.trim())
-      .where((String item) => item.isNotEmpty)
-      .toList(growable: false);
-}

@@ -13,6 +13,7 @@ import 'package:vivocure/features/home/view/home_screen.dart';
 import 'package:vivocure/features/home/view_model/home_view_model.dart';
 import 'package:vivocure/features/splash/view/splash_screen.dart';
 import 'package:vivocure/features/splash/view_model/splash_view_model.dart';
+import 'package:vivocure/features/sync/view/sync_inbox_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -21,6 +22,7 @@ class AppRoutes {
   static const String home = '/home';
   static const String addDoctor = '/add-doctor';
   static const String addChemist = '/add-chemist';
+  static const String syncInbox = '/sync-inbox';
 }
 
 class AppRouter {
@@ -75,6 +77,11 @@ class AppRouter {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => const AddChemistScreen(),
+        );
+      case AppRoutes.syncInbox:
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const SyncInboxScreen(),
         );
       default:
         return MaterialPageRoute<void>(

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:vivocure/core/auth/auth_storage.dart';
-import 'package:vivocure/core/config/api_config.dart';
+import 'package:vivocure/core/app_services.dart';
+import 'package:vivocure/core/db/app_database.dart' as db;
 import 'package:vivocure/core/navigation/home_user_context.dart';
-import 'package:vivocure/core/network/network_client.dart';
-import 'package:vivocure/core/network/network_exception.dart';
-import 'package:vivocure/core/products/product_cache_service.dart';
+import 'package:vivocure/data/repositories/plan_repository.dart';
 import 'package:vivocure/features/home/model/home_menu_item.dart';
 
 class HomeViewModel extends ChangeNotifier {
@@ -22,10 +20,6 @@ class HomeViewModel extends ChangeNotifier {
   final List<PlanMeetEntry> _planMeetEntries = <PlanMeetEntry>[];
   final List<DcrEntry> _apiDcrEntries = <DcrEntry>[];
   final Set<String> _recentlyCreatedDcrPlanIds = <String>{};
-  final NetworkClient _networkClient = NetworkClient(
-    scheme: ApiConfig.scheme,
-    host: ApiConfig.host,
-  );
   List<UpcomingEvent> _upcomingEvents = <UpcomingEvent>[];
   bool _isUpcomingEventsLoading = false;
   String? _upcomingEventsErrorMessage;
@@ -162,12 +156,13 @@ class HomeViewModel extends ChangeNotifier {
           .where((String item) => item.isNotEmpty),
     };
 
-    if (completedPlanIds.isEmpty) {
-      return List<PlanMeetEntry>.unmodifiable(_planMeetEntries);
-    }
-
     return List<PlanMeetEntry>.unmodifiable(
       _planMeetEntries.where((PlanMeetEntry entry) {
+        // Completed plans (DCR recorded — including offline) drop out of the
+        // "pending DCR" list immediately.
+        if (entry.visitStatus == 2) {
+          return false;
+        }
         return !completedPlanIds.contains(entry.id.trim());
       }),
     );
@@ -221,37 +216,69 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final AuthSession session = await AuthStorage.loadSession();
-      if (!session.hasAccessToken) {
-        _upcomingEvents = <UpcomingEvent>[];
-        _upcomingEventsErrorMessage = 'Session expired. Please login again.';
-        return;
+      // Computed entirely from the local database (mirrors the old
+      // /upcoming-events server logic): birthdays/anniversaries in the next
+      // 15 days across the rep's doctors and chemist contact persons.
+      final List<UpcomingEvent> events = <UpcomingEvent>[];
+      final DateTime today = _toDateOnly(DateTime.now());
+
+      final List<db.Doctor> doctors =
+          await AppServices.doctors.searchDoctors(limit: 2000);
+      for (final db.Doctor doctor in doctors) {
+        final String fullName = <String?>[
+          doctor.firstName,
+          doctor.middleName,
+          doctor.lastName,
+        ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim();
+        _appendEventIfUpcoming(
+          events,
+          today: today,
+          rawDate: doctor.dob,
+          eventName: 'Birthday',
+          customerName: fullName,
+          customerType: 'Doctor',
+          customerLocation: doctor.area ?? '',
+        );
+        _appendEventIfUpcoming(
+          events,
+          today: today,
+          rawDate: doctor.dom,
+          eventName: 'Anniversary',
+          customerName: fullName,
+          customerType: 'Doctor',
+          customerLocation: doctor.area ?? '',
+        );
       }
 
-      final dynamic responseData = (await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/upcoming-events/',
-        headers: <String, String>{'Authorization': session.authorizationHeader},
-      )).data;
-
-      final Map<String, dynamic> root = _asMap(responseData);
-      final dynamic rawItems = root.isNotEmpty ? root['data'] : responseData;
-      final List<dynamic> items = rawItems is List ? rawItems : <dynamic>[];
-      final String message = _asString(root['msg']);
-
-      _upcomingEvents = items
-          .map<UpcomingEvent>(
-            (dynamic item) => UpcomingEvent.fromJson(_asMap(item)),
-          )
-          .toList(growable: false);
-
-      if (message.isNotEmpty && message.toLowerCase() != 'upcoming events') {
-        _upcomingEventsSectionLabel = message;
-      } else {
-        _upcomingEventsSectionLabel = 'Birthdays & Anniversaries';
+      final List<db.Chemist> chemists =
+          await AppServices.chemists.searchChemists(limit: 2000);
+      for (final db.Chemist chemist in chemists) {
+        _appendEventIfUpcoming(
+          events,
+          today: today,
+          rawDate: chemist.contactPersonDob,
+          eventName: 'Birthday',
+          customerName: chemist.fullName,
+          customerType: 'Chemist',
+          customerLocation: chemist.area ?? '',
+        );
+        _appendEventIfUpcoming(
+          events,
+          today: today,
+          rawDate: chemist.contactPersonDom,
+          eventName: 'Anniversary',
+          customerName: chemist.fullName,
+          customerType: 'Chemist',
+          customerLocation: chemist.area ?? '',
+        );
       }
-    } on NetworkException catch (error) {
-      _upcomingEvents = <UpcomingEvent>[];
-      _upcomingEventsErrorMessage = error.message;
+
+      events.sort(
+        (UpcomingEvent a, UpcomingEvent b) =>
+            a.eventDate.compareTo(b.eventDate),
+      );
+      _upcomingEvents = events;
+      _upcomingEventsSectionLabel = 'Birthdays & Anniversaries';
     } catch (_) {
       _upcomingEvents = <UpcomingEvent>[];
       _upcomingEventsErrorMessage = 'Unable to load Birthdays & Anniversaries.';
@@ -259,6 +286,51 @@ class HomeViewModel extends ChangeNotifier {
       _isUpcomingEventsLoading = false;
       notifyListeners();
     }
+  }
+
+  void _appendEventIfUpcoming(
+    List<UpcomingEvent> events, {
+    required DateTime today,
+    required String? rawDate,
+    required String eventName,
+    required String customerName,
+    required String customerType,
+    required String customerLocation,
+  }) {
+    if (rawDate == null || rawDate.isEmpty || customerName.isEmpty) {
+      return;
+    }
+    final DateTime? parsed = DateTime.tryParse(rawDate);
+    if (parsed == null) {
+      return;
+    }
+    DateTime eventDate = DateTime(today.year, parsed.month, parsed.day);
+    if (eventDate.isBefore(today)) {
+      eventDate = DateTime(today.year + 1, parsed.month, parsed.day);
+    }
+    if (eventDate.difference(today).inDays > 15) {
+      return;
+    }
+    final String label = eventDate == today
+        ? 'Today'
+        : eventDate == today.add(const Duration(days: 1))
+            ? 'Tomorrow'
+            : '${eventDate.day} ${_fullMonthName(eventDate.month)}, ${eventDate.year}';
+    events.add(UpcomingEvent(
+      eventName: eventName,
+      eventDate: label,
+      customerName: customerName,
+      customerType: customerType,
+      customerLocation: customerLocation,
+    ));
+  }
+
+  String _fullMonthName(int month) {
+    const List<String> months = <String>[
+      'January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December',
+    ];
+    return months[month - 1];
   }
 
   Future<void> fetchTodayPlan() async {
@@ -271,27 +343,10 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final AuthSession session = await AuthStorage.loadSession();
-      if (!session.hasAccessToken) {
-        _todayVisits = 0;
-        _doctorVisits = 0;
-        _chemistVisits = 0;
-        _todayPlanErrorMessage = 'Session expired. Please login again.';
-        return;
-      }
-
-      final dynamic responseData = (await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/plans/today-plan',
-        headers: <String, String>{'Authorization': session.authorizationHeader},
-      )).data;
-
-      final Map<String, dynamic> root = _asMap(responseData);
-      final Map<String, dynamic> data = _asMap(root['data']);
-      _todayVisits = _asInt(data['total_count']);
-      _doctorVisits = _asInt(data['doctor_count']);
-      _chemistVisits = _asInt(data['chemist_count']);
-    } on NetworkException catch (error) {
-      _todayPlanErrorMessage = error.message;
+      final PlanCounts counts = await AppServices.plans.todayPlanCounts();
+      _todayVisits = counts.total;
+      _doctorVisits = counts.doctors;
+      _chemistVisits = counts.chemists;
     } catch (_) {
       _todayPlanErrorMessage = 'Unable to load today plan.';
     } finally {
@@ -302,19 +357,22 @@ class HomeViewModel extends ChangeNotifier {
 
   Future<void> loadCachedProducts() async {
     try {
-      final List<CachedProduct> cachedProducts =
-          await ProductCacheService.loadCachedProducts();
-      _medicinePresentations = cachedProducts
-          .map<MedicinePresentation>(
-            (CachedProduct item) => MedicinePresentation(
-              id: item.id,
-              name: item.name,
-              code: item.code,
-              imageUrl: item.imageUrl,
-              localImagePath: item.localImagePath,
-            ),
-          )
-          .toList(growable: false);
+      final List<db.Product> products =
+          await AppServices.products.allProducts();
+      final List<MedicinePresentation> presentations =
+          <MedicinePresentation>[];
+      for (final db.Product product in products) {
+        final String? localPath =
+            await AppServices.products.localImagePath(product.id);
+        presentations.add(MedicinePresentation(
+          id: product.id,
+          name: product.productName,
+          code: product.productCode ?? '',
+          imageUrl: product.primaryImageUrl ?? '',
+          localImagePath: localPath ?? '',
+        ));
+      }
+      _medicinePresentations = presentations;
       notifyListeners();
     } catch (_) {
       _medicinePresentations = <MedicinePresentation>[];
@@ -398,54 +456,23 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   Future<PlanDropdownData> fetchPlanDoctorChemistDropdown() async {
-    final AuthSession session = await AuthStorage.loadSession();
-    if (!session.hasAccessToken) {
-      throw const NetworkException(
-        message: 'Session expired. Please login again.',
-        type: NetworkExceptionType.unauthorized,
-      );
-    }
+    await _refreshCustomerProfiles();
 
-    final dynamic responseData = (await _networkClient.get(
-      '${ApiConfig.apiVersionPath}/plans/doctor-chemist-dropdown',
-      headers: <String, String>{'Authorization': session.authorizationHeader},
-    )).data;
+    final List<db.Doctor> doctorRows =
+        await AppServices.doctors.dropdownOptions();
+    final List<db.Chemist> chemistRows =
+        await AppServices.chemists.dropdownOptions();
 
-    final Map<String, dynamic> root = _asMap(responseData);
-    final dynamic payload = root['data'] ?? responseData;
-    final Map<String, dynamic> data = _asMap(payload);
-
-    List<PlanCustomerOption> doctors = _parsePlanCustomerOptions(
-      data['doctors'],
-      fallbackType: 'doctor',
-    );
-    List<PlanCustomerOption> chemists = _parsePlanCustomerOptions(
-      data['chemists'],
-      fallbackType: 'chemist',
-    );
-
-    if (doctors.isEmpty && chemists.isEmpty) {
-      final List<PlanCustomerOption> combined = _parsePlanCustomerOptions(
-        payload,
-      );
-      doctors = combined
-          .where((PlanCustomerOption item) => item.normalizedType == 'doctor')
-          .toList(growable: false);
-      chemists = combined
-          .where((PlanCustomerOption item) => item.normalizedType == 'chemist')
-          .toList(growable: false);
-    }
-
-    try {
-      await _refreshCustomerProfiles(session);
-    } on NetworkException catch (error) {
-      if (error.type == NetworkExceptionType.unauthorized) {
-        rethrow;
-      }
-    }
+    List<PlanCustomerOption> doctors = doctorRows
+        .map(_doctorOption)
+        .where((PlanCustomerOption item) => item.name.isNotEmpty)
+        .toList(growable: false);
+    List<PlanCustomerOption> chemists = chemistRows
+        .map(_chemistOption)
+        .where((PlanCustomerOption item) => item.name.isNotEmpty)
+        .toList(growable: false);
 
     final Map<String, CustomerProfile> profilesById = _customerProfilesById;
-
     doctors = doctors
         .map(
           (PlanCustomerOption item) => item.mergeProfile(profilesById[item.id]),
@@ -467,41 +494,63 @@ class HomeViewModel extends ChangeNotifier {
     return PlanDropdownData(doctors: doctors, chemists: chemists);
   }
 
+  PlanCustomerOption _doctorOption(db.Doctor row) {
+    final String name = <String?>[row.firstName, row.middleName, row.lastName]
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .join(' ')
+        .trim();
+    return PlanCustomerOption(
+      id: row.id,
+      name: name,
+      code: (row.doctorCode == null || row.doctorCode!.isEmpty)
+          ? 'PENDING'
+          : row.doctorCode!,
+      customerType: 'doctor',
+    );
+  }
+
+  PlanCustomerOption _chemistOption(db.Chemist row) {
+    return PlanCustomerOption(
+      id: row.id,
+      name: row.fullName,
+      code: (row.chemistCode == null || row.chemistCode!.isEmpty)
+          ? 'PENDING'
+          : row.chemistCode!,
+      customerType: 'chemist',
+    );
+  }
+
   Future<String> createPlans({
     required DateTime visitDate,
     required List<PlanCustomerOption> customers,
   }) async {
-    final AuthSession session = await AuthStorage.loadSession();
-    if (!session.hasAccessToken) {
-      throw const NetworkException(
-        message: 'Session expired. Please login again.',
-        type: NetworkExceptionType.unauthorized,
-      );
-    }
-
-    final List<Map<String, dynamic>> plans = customers
+    final List<({String customerId, String customerType})> entries = customers
         .where(
           (PlanCustomerOption item) =>
               item.id.trim().isNotEmpty && item.normalizedType.isNotEmpty,
         )
         .map(
-          (PlanCustomerOption item) => <String, dynamic>{
-            'visit_date': formatApiDate(visitDate),
-            'customer_type': item.normalizedType,
-            'customer_id': item.id,
-          },
+          (PlanCustomerOption item) =>
+              (customerId: item.id, customerType: item.normalizedType),
         )
         .toList(growable: false);
 
-    final dynamic responseData = (await _networkClient.post(
-      '${ApiConfig.apiVersionPath}/plans',
-      headers: <String, String>{'Authorization': session.authorizationHeader},
-      body: <String, dynamic>{'plans': plans},
-    )).data;
+    final List<String> created = await AppServices.plans.createPlans(
+      visitDate: visitDate,
+      customers: entries,
+    );
 
     await fetchPlanMeetEntries(visitDate: visitDate);
     await fetchTodayPlan();
-    return _extractMessage(responseData) ?? 'Plans created successfully.';
+    if (created.isEmpty) {
+      return 'These customers are already planned for this date.';
+    }
+    if (created.length < entries.length) {
+      return '${created.length} plan(s) saved; '
+          '${entries.length - created.length} already existed.';
+    }
+    return 'Plans created successfully.';
   }
 
   Future<String> createDcr({
@@ -512,39 +561,20 @@ class HomeViewModel extends ChangeNotifier {
   }) async {
     final String trimmedPlanId = planId.trim();
     if (trimmedPlanId.isEmpty) {
-      throw const NetworkException(
-        message: 'Plan id is missing for this entry.',
-        type: NetworkExceptionType.unknown,
-      );
+      throw StateError('Plan id is missing for this entry.');
     }
 
-    final AuthSession session = await AuthStorage.loadSession();
-    if (!session.hasAccessToken) {
-      throw const NetworkException(
-        message: 'Session expired. Please login again.',
-        type: NetworkExceptionType.unauthorized,
-      );
-    }
-
-    final String productIdsValue = productIds
+    final List<String> cleanedProductIds = productIds
         .map((String item) => item.trim())
         .where((String item) => item.isNotEmpty)
-        .join(',');
+        .toList(growable: false);
 
-    final Map<String, dynamic> body = <String, dynamic>{
-      'plan_id': trimmedPlanId,
-      'support_value': supportValue,
-      'expected_support_value': expectedSupportValue,
-    };
-    if (productIdsValue.isNotEmpty) {
-      body['product_ids'] = productIdsValue;
-    }
-
-    final dynamic responseData = (await _networkClient.post(
-      '${ApiConfig.apiVersionPath}/dcr',
-      headers: <String, String>{'Authorization': session.authorizationHeader},
-      body: body,
-    )).data;
+    await AppServices.dcrs.createDcr(
+      planId: trimmedPlanId,
+      supportValue: supportValue.toDouble(),
+      expectedSupportValue: expectedSupportValue.toDouble(),
+      productIds: cleanedProductIds,
+    );
 
     _recentlyCreatedDcrPlanIds.add(trimmedPlanId);
     await fetchPlanMeetEntries(visitDate: _currentPlanMeetDate);
@@ -553,7 +583,7 @@ class HomeViewModel extends ChangeNotifier {
       startDate: _dcrStartDate,
       endDate: _dcrEndDate,
     );
-    return _extractMessage(responseData) ?? 'DCR created successfully.';
+    return 'DCR created successfully.';
   }
 
   Future<void> fetchPlanMeetEntries({DateTime? visitDate}) async {
@@ -564,54 +594,74 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final AuthSession session = await AuthStorage.loadSession();
-      if (!session.hasAccessToken) {
-        _planMeetEntries.clear();
-        _planMeetErrorMessage = 'Session expired. Please login again.';
-        return;
-      }
+      final List<db.DailyPlan> rows =
+          await AppServices.plans.plansForDate(targetDate);
 
-      final dynamic responseData = (await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/plans',
-        headers: <String, String>{'Authorization': session.authorizationHeader},
-        queryParameters: <String, dynamic>{
-          'visit_date': formatApiDate(targetDate),
-        },
-      )).data;
+      // Resolve customer names/codes from the local doctors/chemists tables.
+      final List<String> doctorIds = rows
+          .where((r) => r.customerType == 'doctor')
+          .map((r) => r.customerId)
+          .toList(growable: false);
+      final List<String> chemistIds = rows
+          .where((r) => r.customerType == 'chemist')
+          .map((r) => r.customerId)
+          .toList(growable: false);
+      final Map<String, db.Doctor> doctorsById = <String, db.Doctor>{
+        for (final db.Doctor d in await AppServices.doctors.byIds(doctorIds))
+          d.id: d,
+      };
+      final Map<String, db.Chemist> chemistsById = <String, db.Chemist>{
+        for (final db.Chemist c
+            in await AppServices.chemists.byIds(chemistIds))
+          c.id: c,
+      };
 
-      final Map<String, dynamic> root = _asMap(responseData);
-      dynamic rawItems = root['data'];
-      if (rawItems is! List) {
-        final Map<String, dynamic> nested = _asMap(root['data']);
-        rawItems = nested['items'];
-        if (rawItems is! List) {
-          rawItems = nested['data'];
-        }
-        if (rawItems is! List) {
-          rawItems = nested['plans'];
-        }
-      }
-
-      final List<dynamic> items = rawItems is List ? rawItems : <dynamic>[];
       _planMeetEntries
         ..clear()
         ..addAll(
-          items
-              .map<PlanMeetEntry>(
-                (dynamic item) => PlanMeetEntry.fromJson(_asMap(item)),
-              )
+          rows
+              .map<PlanMeetEntry>((db.DailyPlan row) {
+                String name = '';
+                String code = '';
+                if (row.customerType == 'doctor') {
+                  final db.Doctor? doctor = doctorsById[row.customerId];
+                  if (doctor != null) {
+                    name = <String?>[
+                      doctor.firstName,
+                      doctor.middleName,
+                      doctor.lastName,
+                    ]
+                        .whereType<String>()
+                        .where((s) => s.isNotEmpty)
+                        .join(' ')
+                        .trim();
+                    code = doctor.doctorCode ?? 'PENDING';
+                  }
+                } else {
+                  final db.Chemist? chemist = chemistsById[row.customerId];
+                  if (chemist != null) {
+                    name = chemist.fullName;
+                    code = chemist.chemistCode ?? 'PENDING';
+                  }
+                }
+                return PlanMeetEntry(
+                  id: row.id,
+                  customerId: row.customerId,
+                  customerCode: code,
+                  type: row.customerType,
+                  name: name,
+                  visitDate: DateTime.tryParse(row.visitDate) ?? targetDate,
+                  createdAt: DateTime.tryParse(row.cdt ?? '') ??
+                      (DateTime.tryParse(row.visitDate) ?? targetDate),
+                  visitStatus: row.visitStatus,
+                );
+              })
               .where((PlanMeetEntry item) => item.name.trim().isNotEmpty),
         );
 
       if (_planMeetEntries.isNotEmpty &&
           _shouldRefreshCustomerProfiles(_planMeetEntries)) {
-        try {
-          await _refreshCustomerProfiles(session);
-        } on NetworkException catch (error) {
-          if (error.type == NetworkExceptionType.unauthorized) {
-            rethrow;
-          }
-        }
+        await _refreshCustomerProfiles();
       }
 
       _planMeetEntries.sort((PlanMeetEntry a, PlanMeetEntry b) {
@@ -621,9 +671,6 @@ class HomeViewModel extends ChangeNotifier {
         }
         return b.createdAt.compareTo(a.createdAt);
       });
-    } on NetworkException catch (error) {
-      _planMeetEntries.clear();
-      _planMeetErrorMessage = error.message;
     } catch (_) {
       _planMeetEntries.clear();
       _planMeetErrorMessage = 'Unable to load plans.';
@@ -662,49 +709,29 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final AuthSession session = await AuthStorage.loadSession();
-      if (!session.hasAccessToken) {
-        _apiDcrEntries.clear();
-        _dcrErrorMessage = 'Session expired. Please login again.';
-        return;
+      final DateTime rangeStart = resolvedTodayOnly
+          ? _toDateOnly(DateTime.now())
+          : _toDateOnly(_dcrStartDate);
+      final DateTime rangeEnd = (resolvedTodayOnly
+              ? _toDateOnly(DateTime.now())
+              : _toDateOnly(_dcrEndDate))
+          .add(const Duration(days: 1))
+          .subtract(const Duration(seconds: 1));
+
+      final List<db.Dcr> rows = await AppServices.dcrs.dcrsBetween(
+        start: rangeStart,
+        end: rangeEnd,
+      );
+
+      final List<DcrEntry> entries = <DcrEntry>[];
+      for (final db.Dcr row in rows) {
+        entries.add(await _dcrEntryFromRow(row));
       }
-
-      final dynamic responseData = (await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/dcr',
-        headers: <String, String>{'Authorization': session.authorizationHeader},
-        queryParameters: <String, dynamic>{
-          'filter_type': filterType,
-          'sort_order': sortOrder,
-          'limit': limit,
-          if (!resolvedTodayOnly) 'start_date': formatApiDate(_dcrStartDate),
-          if (!resolvedTodayOnly) 'end_date': formatApiDate(_dcrEndDate),
-        },
-      )).data;
-
-      final Map<String, dynamic> root = _asMap(responseData);
-      dynamic rawItems = root['data'];
-      if (rawItems is! List) {
-        final Map<String, dynamic> nested = _asMap(root['data']);
-        rawItems = nested['items'];
-        if (rawItems is! List) {
-          rawItems = nested['data'];
-        }
-        if (rawItems is! List) {
-          rawItems = nested['dcrs'];
-        }
-      }
-
-      final List<dynamic> items = rawItems is List ? rawItems : <dynamic>[];
       _apiDcrEntries
         ..clear()
         ..addAll(
-          items
-              .map<DcrEntry>((dynamic item) => DcrEntry.fromJson(_asMap(item)))
-              .where((DcrEntry item) => item.customerName.isNotEmpty),
+          entries.where((DcrEntry item) => item.customerName.isNotEmpty),
         );
-    } on NetworkException catch (error) {
-      _apiDcrEntries.clear();
-      _dcrErrorMessage = error.message;
     } catch (_) {
       _apiDcrEntries.clear();
       _dcrErrorMessage = 'Unable to load DCR entries.';
@@ -712,6 +739,91 @@ class HomeViewModel extends ChangeNotifier {
       _isDcrLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<DcrEntry> _dcrEntryFromRow(db.Dcr row) async {
+    String customerType = '';
+    String customerId = '';
+    String customerName = '';
+    String customerCode = '';
+
+    final String planId = row.planId ?? '';
+    if (planId.isNotEmpty) {
+      final db.DailyPlan? plan = await AppServices.plans.getById(planId);
+      if (plan != null) {
+        customerType = plan.customerType;
+        customerId = plan.customerId;
+        if (plan.customerType == 'doctor') {
+          final db.Doctor? doctor =
+              await AppServices.doctors.getById(plan.customerId);
+          if (doctor != null) {
+            customerName = <String?>[
+              doctor.firstName,
+              doctor.middleName,
+              doctor.lastName,
+            ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim();
+            customerCode = doctor.doctorCode ?? 'PENDING';
+          }
+        } else if (plan.customerType == 'chemist') {
+          final db.Chemist? chemist =
+              await AppServices.chemists.getById(plan.customerId);
+          if (chemist != null) {
+            customerName = chemist.fullName;
+            customerCode = chemist.chemistCode ?? 'PENDING';
+          }
+        }
+      }
+    }
+
+    final List<String> productIds = (row.productIds ?? '')
+        .split(',')
+        .map((String id) => id.trim())
+        .where((String id) => id.isNotEmpty)
+        .toList(growable: false);
+    final List<db.Product> products =
+        await AppServices.products.byIds(productIds);
+
+    final DateTime visitDateTime =
+        DateTime.tryParse(row.visitDatetime) ?? DateTime.now();
+    final DateTime updatedAt =
+        DateTime.tryParse(row.locallyChangedAt ?? '') ??
+            DateTime.tryParse(row.serverUdt ?? '') ??
+            visitDateTime;
+
+    return DcrEntry(
+      id: row.id,
+      planId: planId,
+      customerId: customerId,
+      customerType: customerType,
+      customerName: customerName,
+      customerCode: customerCode,
+      visitDateTime: visitDateTime,
+      remarks: row.remarks ?? '',
+      supportValue: _numericString(row.supportValue),
+      potential: _numericString(row.potential),
+      expectedSupportValue: _numericString(row.expectedSupportValue),
+      products: products
+          .map(
+            (db.Product p) => DcrProduct(
+              id: p.id,
+              productName: p.productName,
+              productCode: p.productCode ?? '',
+            ),
+          )
+          .toList(growable: false),
+      updatedAt: updatedAt,
+      isLocalOnly: row.localStatus != 'synced',
+    );
+  }
+
+  String _numericString(double? value) {
+    if (value == null) {
+      return '';
+    }
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toString();
   }
 
   Future<void> setDcrDateRange({
@@ -877,81 +989,58 @@ class HomeViewModel extends ChangeNotifier {
     ].join('|');
   }
 
-  List<PlanCustomerOption> _parsePlanCustomerOptions(
-    dynamic rawItems, {
-    String fallbackType = '',
-  }) {
-    if (rawItems is! List) {
-      return const <PlanCustomerOption>[];
-    }
 
-    final List<PlanCustomerOption> items = <PlanCustomerOption>[];
-    for (final dynamic rawItem in rawItems) {
-      final PlanCustomerOption item = PlanCustomerOption.fromJson(
-        _asMap(rawItem),
-        fallbackType: fallbackType,
-      );
-      if (item.id.isNotEmpty && item.name.isNotEmpty) {
-        items.add(item);
-      }
-    }
-    return items;
-  }
 
-  Map<String, CustomerProfile> _parseCustomerProfilesFromListResponse(
-    dynamic responseData, {
-    required String type,
-  }) {
-    final Map<String, dynamic> root = _asMap(responseData);
-    dynamic rawItems = root['data'];
-    if (rawItems is! List) {
-      final Map<String, dynamic> nested = _asMap(root['data']);
-      rawItems = nested['items'];
-      if (rawItems is! List) {
-        rawItems = nested['data'];
-      }
-    }
-
-    final List<dynamic> items = rawItems is List ? rawItems : <dynamic>[];
+  Future<void> _refreshCustomerProfiles() async {
     final Map<String, CustomerProfile> profilesById =
         <String, CustomerProfile>{};
-    for (final dynamic item in items) {
-      final CustomerProfile profile = CustomerProfile.fromJson(
-        _asMap(item),
-        fallbackType: type,
+
+    for (final db.Doctor row
+        in await AppServices.doctors.searchDoctors(limit: 2000)) {
+      final String name = <String?>[row.firstName, row.middleName, row.lastName]
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
+          .join(' ')
+          .trim();
+      profilesById[row.id] = CustomerProfile(
+        id: row.id,
+        code: row.doctorCode ?? 'PENDING',
+        type: 'doctor',
+        name: name,
+        qualification: row.qualification ?? '',
+        speciality: row.speciality ?? '',
+        phone: row.phone ?? '',
+        area: row.area ?? '',
+        city: row.city ?? '',
+        state: row.state ?? '',
+        country: row.country ?? '',
+        potential: _numericString(row.potential),
+        supportValue: _numericString(row.supportValue),
+        expectedSupportValue: _numericString(row.expectedSupportValue),
+        email: row.email ?? '',
       );
-      if (profile.id.isNotEmpty) {
-        profilesById[profile.id] = profile;
-      }
     }
-    return profilesById;
-  }
 
-  Future<void> _refreshCustomerProfiles(AuthSession session) async {
-    final List<dynamic>
-    detailedResponses = await Future.wait<dynamic>(<Future<dynamic>>[
-      _networkClient.get(
-        '${ApiConfig.apiVersionPath}/doctors',
-        headers: <String, String>{'Authorization': session.authorizationHeader},
-        queryParameters: <String, dynamic>{'limit': 100, 'sort_order': 'asc'},
-      ),
-      _networkClient.get(
-        '${ApiConfig.apiVersionPath}/chemists',
-        headers: <String, String>{'Authorization': session.authorizationHeader},
-        queryParameters: <String, dynamic>{'limit': 100, 'sort_order': 'asc'},
-      ),
-    ]);
-
-    final Map<String, CustomerProfile> profilesById =
-        _parseCustomerProfilesFromListResponse(
-          detailedResponses[0].data,
-          type: 'doctor',
-        )..addAll(
-          _parseCustomerProfilesFromListResponse(
-            detailedResponses[1].data,
-            type: 'chemist',
-          ),
-        );
+    for (final db.Chemist row
+        in await AppServices.chemists.searchChemists(limit: 2000)) {
+      profilesById[row.id] = CustomerProfile(
+        id: row.id,
+        code: row.chemistCode ?? 'PENDING',
+        type: 'chemist',
+        name: row.fullName,
+        phone: row.phone ?? '',
+        area: row.area ?? '',
+        city: row.city ?? '',
+        state: row.state ?? '',
+        country: row.country ?? '',
+        potential: _numericString(row.potential),
+        supportValue: _numericString(row.supportValue),
+        expectedSupportValue: _numericString(row.expectedSupportValue),
+        email: row.email ?? '',
+        contactPersonName: row.contactPersonName ?? '',
+        contactPersonEmail: row.contactPersonEmail ?? '',
+      );
+    }
 
     if (profilesById.isEmpty) {
       return;
@@ -962,71 +1051,10 @@ class HomeViewModel extends ChangeNotifier {
       ..addAll(profilesById);
   }
 
-  String? _extractMessage(dynamic data) {
-    if (data is String && data.trim().isNotEmpty) {
-      return data.trim();
-    }
-    if (data is List) {
-      for (final dynamic item in data) {
-        final String? message = _extractMessage(item);
-        if (message != null && message.isNotEmpty) {
-          return message;
-        }
-      }
-      return null;
-    }
 
-    final Map<String, dynamic> map = _asMap(data);
-    for (final String key in const <String>['msg', 'message', 'detail']) {
-      final String? message = _extractMessage(map[key]);
-      if (message != null && message.isNotEmpty) {
-        return message;
-      }
-    }
-    return null;
-  }
 
-  Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.map(
-        (Object? key, Object? value) =>
-            MapEntry<String, dynamic>(key.toString(), value),
-      );
-    }
-    return <String, dynamic>{};
-  }
 
-  String _asString(Object? value) {
-    if (value is String) {
-      return value.trim();
-    }
-    if (value == null) {
-      return '';
-    }
-    return value.toString().trim();
-  }
 
-  int _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    if (value is String) {
-      return int.tryParse(value.trim()) ?? 0;
-    }
-    return 0;
-  }
-
-  @override
-  void dispose() {
-    _networkClient.close();
-    super.dispose();
-  }
 }
 
 class UpcomingEvent {
@@ -1074,6 +1102,7 @@ class PlanMeetEntry {
     required this.name,
     required this.visitDate,
     required this.createdAt,
+    this.visitStatus = 1,
   });
 
   final String id;
@@ -1083,6 +1112,9 @@ class PlanMeetEntry {
   final String name;
   final DateTime visitDate;
   final DateTime createdAt;
+
+  /// 1 = Planned, 2 = Completed (DCR exists), 3 = Cancelled.
+  final int visitStatus;
 
   bool get isDoctor => type.trim().toLowerCase() == 'doctor';
 

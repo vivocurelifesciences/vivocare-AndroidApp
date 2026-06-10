@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:vivocure/core/auth/auth_storage.dart';
-import 'package:vivocure/core/config/api_config.dart';
-import 'package:vivocure/core/network/network_client.dart';
-import 'package:vivocure/core/network/network_exception.dart';
-import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/app_services.dart';
+import 'package:vivocure/core/db/app_database.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
@@ -45,7 +42,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   final TextEditingController _countryController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
-  late final NetworkClient _networkClient;
+  static const int _chemistPageSize = 50;
 
   _ChemistActionMode _mode = _ChemistActionMode.add;
   bool _isSubmitting = false;
@@ -54,15 +51,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   bool _showValidationErrors = false;
   List<_ChemistRecord> _chemistRecords = <_ChemistRecord>[];
   _ChemistRecord? _selectedChemist;
-
-  @override
-  void initState() {
-    super.initState();
-    _networkClient = NetworkClient(
-      scheme: ApiConfig.scheme,
-      host: ApiConfig.host,
-    );
-  }
 
   @override
   void dispose() {
@@ -83,7 +71,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     _areaController.dispose();
     _countryController.dispose();
     _searchController.dispose();
-    _networkClient.close();
     super.dispose();
   }
 
@@ -108,15 +95,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     if (mode == _ChemistActionMode.edit) {
       _loadChemists();
     }
-  }
-
-  Future<AuthSession?> _loadSessionOrShowError() async {
-    final AuthSession session = await AuthStorage.loadSession();
-    if (!session.hasAccessToken) {
-      _showCenterMessage('Session expired. Please login again.', isError: true);
-      return null;
-    }
-    return session;
   }
 
   Future<void> _pickDate(TextEditingController controller) async {
@@ -228,23 +206,18 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       return;
     }
 
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
-
     setState(() {
       _isSubmitting = true;
     });
 
     try {
       if (_mode == _ChemistActionMode.add) {
-        await _createChemist(session);
+        await _createChemist();
       } else {
-        await _updateChemist(session, _selectedChemist!.id);
+        await _updateChemist(_selectedChemist!.id);
       }
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
+    } on Exception catch (_) {
+      _showCenterMessage('Unable to save chemist right now.', isError: true);
     } catch (_) {
       _showCenterMessage('Unable to save chemist right now.', isError: true);
     } finally {
@@ -256,12 +229,8 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     }
   }
 
-  Future<void> _createChemist(AuthSession session) async {
-    final NetworkResponse<dynamic> response = await _networkClient.post(
-      '${ApiConfig.apiVersionPath}/chemists',
-      headers: _authHeaders(session),
-      body: _buildChemistRequestBody(),
-    );
+  Future<void> _createChemist() async {
+    await AppServices.chemists.createChemist(_buildChemistFields());
 
     if (!mounted) {
       return;
@@ -271,29 +240,18 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       _clearForm();
     });
 
-    _showCenterMessage(
-      _extractResponseMessage(response.data) ?? 'Chemist saved successfully',
-    );
+    _showCenterMessage('Chemist saved successfully');
   }
 
-  Future<void> _updateChemist(AuthSession session, String chemistId) async {
-    final NetworkResponse<dynamic> response = await _networkClient.put(
-      '${ApiConfig.apiVersionPath}/chemists/$chemistId',
-      headers: _authHeaders(session),
-      body: _buildChemistRequestBody(),
-    );
+  Future<void> _updateChemist(String chemistId) async {
+    await AppServices.chemists.updateChemist(chemistId, _buildChemistFields());
 
-    _showCenterMessage(
-      _extractResponseMessage(response.data) ?? 'Chemist updated successfully',
-    );
+    _showCenterMessage('Chemist updated successfully');
     await _loadChemists(search: _searchController.text);
   }
 
-  Future<void> _loadChemists({String search = ''}) async {
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
+  Future<void> _loadChemists({String search = '', bool append = false}) async {
+    final int offset = append ? _chemistRecords.length : 0;
 
     setState(() {
       _isLoadingChemists = true;
@@ -301,31 +259,27 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
 
     try {
       final String trimmedSearch = search.trim();
-      final Map<String, dynamic> query = <String, dynamic>{
-        'limit': 100,
-        'sort_order': 'asc',
-      };
-      if (trimmedSearch.isNotEmpty) {
-        query['search_text'] = trimmedSearch;
-      }
-
-      final NetworkResponse<dynamic> response = await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/chemists',
-        headers: _authHeaders(session),
-        queryParameters: query,
+      final List<Chemist> rows = await AppServices.chemists.searchChemists(
+        searchText: trimmedSearch.isEmpty ? null : trimmedSearch,
+        limit: _chemistPageSize,
+        offset: offset,
       );
 
-      final List<_ChemistRecord> chemists = _parseChemists(response.data);
+      final List<_ChemistRecord> chemists = rows
+          .map(_ChemistRecord.fromRow)
+          .toList(growable: false);
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _chemistRecords = chemists;
+        _chemistRecords = append
+            ? <_ChemistRecord>[..._chemistRecords, ...chemists]
+            : chemists;
       });
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
+    } on Exception catch (_) {
+      _showCenterMessage('Unable to load chemist list.', isError: true);
     } catch (_) {
       _showCenterMessage('Unable to load chemist list.', isError: true);
     } finally {
@@ -338,24 +292,18 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
   }
 
   Future<void> _handleEditChemist(_ChemistRecord chemist) async {
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
-
     setState(() {
       _isActionInProgress = true;
     });
 
     try {
-      final NetworkResponse<dynamic> response = await _networkClient.get(
-        '${ApiConfig.apiVersionPath}/chemists/${chemist.id}',
-        headers: _authHeaders(session),
-      );
+      final Chemist? row = await AppServices.chemists.getById(chemist.id);
+      if (row == null) {
+        _showCenterMessage('Unable to load chemist details.', isError: true);
+        return;
+      }
 
-      final _ChemistRecord details = _ChemistRecord.fromJson(
-        _extractEntityMap(response.data),
-      );
+      final _ChemistRecord details = _ChemistRecord.fromRow(row);
 
       if (!mounted) {
         return;
@@ -367,8 +315,8 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       });
 
       _scrollToForm();
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
+    } on Exception catch (_) {
+      _showCenterMessage('Unable to load chemist details.', isError: true);
     } catch (_) {
       _showCenterMessage('Unable to load chemist details.', isError: true);
     } finally {
@@ -390,20 +338,12 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       return;
     }
 
-    final AuthSession? session = await _loadSessionOrShowError();
-    if (session == null) {
-      return;
-    }
-
     setState(() {
       _isActionInProgress = true;
     });
 
     try {
-      final NetworkResponse<dynamic> response = await _networkClient.delete(
-        '${ApiConfig.apiVersionPath}/chemists/${chemist.id}',
-        headers: _authHeaders(session),
-      );
+      await AppServices.chemists.deleteChemist(chemist.id);
 
       if (!mounted) {
         return;
@@ -419,13 +359,10 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
         }
       });
 
-      _showCenterMessage(
-        _extractResponseMessage(response.data) ??
-            'Chemist deleted successfully',
-      );
+      _showCenterMessage('Chemist deleted successfully');
       await _loadChemists(search: _searchController.text);
-    } on NetworkException catch (error) {
-      _showCenterMessage(error.message, isError: true);
+    } on Exception catch (_) {
+      _showCenterMessage('Unable to delete chemist right now.', isError: true);
     } catch (_) {
       _showCenterMessage('Unable to delete chemist right now.', isError: true);
     } finally {
@@ -483,42 +420,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     });
   }
 
-  List<_ChemistRecord> _parseChemists(dynamic data) {
-    final Map<String, dynamic> root = _asMap(data);
-
-    Object? rawItems = root['items'];
-    if (rawItems is! List) {
-      final Map<String, dynamic> nested = _asMap(root['data']);
-      rawItems = nested['items'];
-      if (rawItems is! List) {
-        rawItems = nested['data'];
-      }
-    }
-
-    if (rawItems is! List) {
-      rawItems = root['data'];
-    }
-
-    if (rawItems is! List) {
-      return const <_ChemistRecord>[];
-    }
-
-    final List<_ChemistRecord> chemists = <_ChemistRecord>[];
-    for (final dynamic item in rawItems) {
-      final _ChemistRecord chemist = _ChemistRecord.fromJson(_asMap(item));
-      if (chemist.id.isNotEmpty) {
-        chemists.add(chemist);
-      }
-    }
-    return chemists;
-  }
-
-  Map<String, dynamic> _extractEntityMap(dynamic data) {
-    final Map<String, dynamic> root = _asMap(data);
-    final Map<String, dynamic> nested = _asMap(root['data']);
-    return nested.isNotEmpty ? nested : root;
-  }
-
   void _applyChemistToForm(_ChemistRecord chemist) {
     final ({String firstName, String lastName}) nameParts = _splitFullName(
       chemist.fullName,
@@ -561,42 +462,38 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     _showValidationErrors = false;
   }
 
-  Map<String, dynamic> _buildChemistRequestBody() {
+  Map<String, dynamic> _buildChemistFields() {
     return <String, dynamic>{
       'full_name': _buildChemistFullName(),
-      'phone': _textOrEmpty(_phoneController.text),
-      'email': _textOrEmpty(_emailController.text),
-      'contact_person_name': _textOrEmpty(_contactPersonNameController.text),
-      'contact_person_email': _textOrEmpty(_contactPersonEmailController.text),
-      'contact_person_dob': _textOrEmpty(_contactPersonDobController.text),
-      'contact_person_dom': _textOrEmpty(_contactPersonDomController.text),
-      'expected_support_value': _intOrEmpty(
+      'phone': _textOrNull(_phoneController.text),
+      'email': _textOrNull(_emailController.text),
+      'contact_person_name': _textOrNull(_contactPersonNameController.text),
+      'contact_person_email': _textOrNull(_contactPersonEmailController.text),
+      'contact_person_dob': _textOrNull(_contactPersonDobController.text),
+      'contact_person_dom': _textOrNull(_contactPersonDomController.text),
+      'expected_support_value': _numOrNull(
         _expectedSupportValueController.text,
       ),
-      'potential': _intOrEmpty(_potentialController.text),
-      'support_value': _intOrEmpty(_supportValueController.text),
-      'experience_years': _intOrEmpty(_experienceYearsController.text),
-      'state': _textOrEmpty(_stateController.text),
-      'city': _textOrEmpty(_cityController.text),
-      'area': _textOrEmpty(_areaController.text),
-      'country': _textOrEmpty(_countryController.text),
+      'potential': _numOrNull(_potentialController.text),
+      'support_value': _numOrNull(_supportValueController.text),
+      'state': _textOrNull(_stateController.text),
+      'city': _textOrNull(_cityController.text),
+      'area': _textOrNull(_areaController.text),
+      'country': _textOrNull(_countryController.text),
     };
   }
 
-  Map<String, String> _authHeaders(AuthSession session) {
-    return <String, String>{'Authorization': session.authorizationHeader};
+  String? _textOrNull(String value) {
+    final String trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
-  String _textOrEmpty(String value) {
-    return value.trim();
-  }
-
-  Object _intOrEmpty(String value) {
+  num? _numOrNull(String value) {
     final String trimmed = value.trim();
     if (trimmed.isEmpty) {
-      return '';
+      return null;
     }
-    return int.tryParse(trimmed) ?? trimmed;
+    return num.tryParse(trimmed);
   }
 
   String _buildChemistFullName() {
@@ -619,28 +516,6 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
       return (firstName: parts.first, lastName: '');
     }
     return (firstName: parts.first, lastName: parts.sublist(1).join(' '));
-  }
-
-  String? _extractResponseMessage(dynamic data) {
-    if (data is String && data.trim().isNotEmpty) {
-      return data.trim();
-    }
-    if (data is List) {
-      for (final dynamic item in data) {
-        final String? message = _extractResponseMessage(item);
-        if (message != null) {
-          return message;
-        }
-      }
-    }
-    final Map<String, dynamic> map = _asMap(data);
-    for (final String key in const <String>['msg', 'message', 'detail']) {
-      final String? message = _extractResponseMessage(map[key]);
-      if (message != null && message.isNotEmpty) {
-        return message;
-      }
-    }
-    return null;
   }
 
   Future<void> _showCenterMessage(String message, {bool isError = false}) {
@@ -807,14 +682,28 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                             children: [
                               Expanded(
                                 flex: 4,
-                                child: Text(
-                                  chemist.fullName,
-                                  style: TextStyle(
-                                    fontWeight: isSelected
-                                        ? FontWeight.w700
-                                        : FontWeight.w600,
-                                    color: const Color(0xFF1D3557),
-                                  ),
+                                child: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        chemist.fullName,
+                                        style: TextStyle(
+                                          fontWeight: isSelected
+                                              ? FontWeight.w700
+                                              : FontWeight.w600,
+                                          color: const Color(0xFF1D3557),
+                                        ),
+                                      ),
+                                    ),
+                                    if (!chemist.isSynced) ...[
+                                      const SizedBox(width: 6),
+                                      const Icon(
+                                        Icons.cloud_off_outlined,
+                                        size: 14,
+                                        color: Color(0xFF8A99A8),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -822,7 +711,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                                 flex: 2,
                                 child: Text(
                                   chemist.chemistCode.isEmpty
-                                      ? '-'
+                                      ? 'PENDING'
                                       : chemist.chemistCode,
                                   style: const TextStyle(
                                     color: Color(0xFF52606D),
@@ -1198,8 +1087,42 @@ class _ChemistRecord {
     required this.city,
     required this.area,
     required this.country,
+    this.isSynced = true,
   });
 
+  factory _ChemistRecord.fromRow(Chemist row) {
+    return _ChemistRecord(
+      id: row.id,
+      chemistCode: row.chemistCode ?? 'PENDING',
+      fullName: row.fullName,
+      phone: row.phone ?? '',
+      email: row.email ?? '',
+      contactPersonName: row.contactPersonName ?? '',
+      contactPersonEmail: row.contactPersonEmail ?? '',
+      contactPersonDob: row.contactPersonDob ?? '',
+      contactPersonDom: row.contactPersonDom ?? '',
+      potential: _numToString(row.potential),
+      supportValue: _numToString(row.supportValue),
+      expectedSupportValue: _numToString(row.expectedSupportValue),
+      experienceYears: '',
+      state: row.state ?? '',
+      city: row.city ?? '',
+      area: row.area ?? '',
+      country: row.country ?? '',
+      isSynced: row.localStatus == 'synced',
+    );
+  }
+
+  static String _numToString(double? value) {
+    if (value == null) {
+      return '';
+    }
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+  }
+
+  final bool isSynced;
   final String id;
   final String chemistCode;
   final String fullName;
@@ -1225,58 +1148,7 @@ class _ChemistRecord {
     return '${fullName.isEmpty ? 'Unnamed Chemist' : fullName} ($chemistCode)';
   }
 
-  factory _ChemistRecord.fromJson(Map<String, dynamic> json) {
-    return _ChemistRecord(
-      id: _asString(json['id']),
-      chemistCode: _asString(json['chemist_code']),
-      fullName: _asString(json['full_name']).isEmpty
-          ? _asString(json['name'])
-          : _asString(json['full_name']),
-      phone: _asString(json['phone']),
-      email: _asString(json['email']),
-      contactPersonName: _asString(json['contact_person_name']),
-      contactPersonEmail: _asString(json['contact_person_email']),
-      contactPersonDob: _asDateString(json['contact_person_dob']),
-      contactPersonDom: _asDateString(json['contact_person_dom']),
-      potential: _asString(json['potential']),
-      supportValue: _asString(json['support_value']),
-      expectedSupportValue: _asString(json['expected_support_value']),
-      experienceYears: _asString(json['experience_years']),
-      state: _asString(json['state']),
-      city: _asString(json['city']),
-      area: _asString(json['area']),
-      country: _asString(json['country']),
-    );
-  }
 }
 
-Map<String, dynamic> _asMap(Object? value) {
-  if (value is Map<String, dynamic>) {
-    return value;
-  }
-  if (value is Map) {
-    return value.map(
-      (Object? key, Object? item) =>
-          MapEntry<String, dynamic>(key.toString(), item),
-    );
-  }
-  return <String, dynamic>{};
-}
 
-String _asString(Object? value) {
-  if (value is String) {
-    return value.trim();
-  }
-  if (value == null) {
-    return '';
-  }
-  return value.toString().trim();
-}
 
-String _asDateString(Object? value) {
-  final String raw = _asString(value);
-  if (raw.length >= 10) {
-    return raw.substring(0, 10);
-  }
-  return raw;
-}

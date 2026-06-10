@@ -3,11 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vivocure/app/router/app_router.dart';
+import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/auth/auth_storage.dart';
-import 'package:vivocure/core/config/api_config.dart';
 import 'package:vivocure/core/navigation/home_user_context.dart';
 import 'package:vivocure/core/network/network_exception.dart';
-import 'package:vivocure/core/products/product_cache_service.dart';
 import 'package:vivocure/features/auth/model/login_request.dart';
 import 'package:vivocure/features/auth/model/login_response.dart';
 import 'package:vivocure/features/auth/repository/auth_repository.dart';
@@ -43,12 +42,6 @@ class LoginViewModel extends ChangeNotifier {
 
     final String username = usernameController.text.trim();
     final String password = passwordController.text.trim();
-    final String loginUrl =
-        '${ApiConfig.scheme}://${ApiConfig.host}${ApiConfig.apiVersionPath}/auth/login';
-    debugPrint(
-      'Login button pressed. username="$username", password="$password"',
-    );
-    debugPrintSynchronously('[API] LOGIN_URL: $loginUrl');
 
     if (username.isEmpty || password.isEmpty) {
       _errorMessage = 'Please enter both username and password.';
@@ -66,23 +59,31 @@ class LoginViewModel extends ChangeNotifier {
         password: password,
       );
       final LoginResponse response = await _authRepository.login(request);
+      // Stores the username and a salted hash verifier for offline login —
+      // never the plaintext password.
       await AuthStorage.saveCredentials(username: username, password: password);
       await AuthStorage.saveSession(
         accessToken: response.data.accessToken,
         refreshToken: response.data.refreshToken,
         tokenType: response.data.tokenType,
       );
-      final AuthSession session = AuthSession(
-        accessToken: response.data.accessToken,
-        refreshToken: response.data.refreshToken,
-        tokenType: response.data.tokenType,
-      );
-      unawaited(_syncProductsInBackground(session));
       final String resolvedName = response.data.user.fullName.isNotEmpty
           ? response.data.user.fullName
           : (response.data.username.isEmpty
                 ? username
                 : response.data.username);
+      await AuthStorage.saveUserProfile(<String, dynamic>{
+        'id': response.data.user.id,
+        'full_name': resolvedName,
+        'role_name': response.data.user.roleName,
+        'employee_code': response.data.user.employeeCode,
+        'email': response.data.user.email,
+      });
+
+      // First sync (or catch-up): runs in the background — the home screens
+      // are reactive to the local database and fill in as data lands.
+      unawaited(AppServices.syncEngine.bootstrap());
+
       final HomeUserContext homeUserContext = HomeUserContext(
         userName: resolvedName,
         roleName: response.data.user.roleName,
@@ -98,10 +99,23 @@ class LoginViewModel extends ChangeNotifier {
         arguments: homeUserContext,
       );
     } on NetworkException catch (error) {
-      debugPrintSynchronously(
-        '[API][LOGIN] ERROR status=${error.statusCode} type=${error.type} message=${error.message} data=${error.data}',
-      );
-      _errorMessage = error.message;
+      final bool offline = error.type == NetworkExceptionType.noInternet ||
+          error.type == NetworkExceptionType.timeout;
+      if (offline) {
+        final bool handled =
+            await _tryOfflineLogin(context, username, password);
+        if (handled) {
+          return;
+        }
+        _errorMessage =
+            'No connection, and offline sign-in is unavailable on this '
+            'device. Connect to the internet for your first login.';
+      } else {
+        debugPrintSynchronously(
+          '[API][LOGIN] ERROR status=${error.statusCode} type=${error.type} message=${error.message}',
+        );
+        _errorMessage = error.message;
+      }
     } catch (_) {
       _errorMessage = 'Unable to login right now. Please try again.';
     } finally {
@@ -115,6 +129,39 @@ class LoginViewModel extends ChangeNotifier {
     }
   }
 
+  /// Offline login: validates against the locally stored verifier and reuses
+  /// the synced local data. Requires one prior online login on this device.
+  Future<bool> _tryOfflineLogin(
+    BuildContext context,
+    String username,
+    String password,
+  ) async {
+    final bool valid = await AuthStorage.verifyOffline(
+      username: username,
+      password: password,
+    );
+    if (!valid) {
+      return false;
+    }
+    final Map<String, dynamic>? profile = await AuthStorage.loadUserProfile();
+    if (profile == null) {
+      return false;
+    }
+    debugPrint('[AUTH] Offline login for $username');
+    if (!context.mounted) {
+      return true;
+    }
+    Navigator.of(context).pushReplacementNamed(
+      AppRoutes.home,
+      arguments: HomeUserContext(
+        userName: (profile['full_name'] ?? '') as String,
+        roleName: (profile['role_name'] ?? '') as String,
+        employeeCode: (profile['employee_code'] ?? '') as String,
+      ),
+    );
+    return true;
+  }
+
   Future<void> _loadSavedCredentials() async {
     final SavedLoginCredentials credentials =
         await AuthStorage.loadSavedCredentials();
@@ -122,15 +169,6 @@ class LoginViewModel extends ChangeNotifier {
       return;
     }
     usernameController.text = credentials.username;
-    passwordController.text = credentials.password;
-  }
-
-  Future<void> _syncProductsInBackground(AuthSession session) async {
-    try {
-      await ProductCacheService.syncProductsInBackground(session: session);
-    } catch (error) {
-      debugPrintSynchronously('[PRODUCTS] Background sync failed: $error');
-    }
   }
 
   @override
