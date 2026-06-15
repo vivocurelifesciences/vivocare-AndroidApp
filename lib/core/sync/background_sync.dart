@@ -12,7 +12,10 @@ const String oneShotSyncTask = 'vivocure.oneshot-sync';
 /// when the app is closed.
 @pragma('vm:entry-point')
 void backgroundSyncDispatcher() {
-  Workmanager().executeTask((String task, Map<String, dynamic>? inputData) async {
+  Workmanager().executeTask((
+    String task,
+    Map<String, dynamic>? inputData,
+  ) async {
     try {
       final session = await AuthStorage.loadSession();
       if (!session.hasAccessToken) {

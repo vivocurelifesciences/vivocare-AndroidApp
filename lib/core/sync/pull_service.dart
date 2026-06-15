@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vivocure/core/db/app_database.dart';
 import 'package:vivocure/core/network/api_client.dart';
 import 'package:vivocure/core/network/network_response.dart';
+import 'package:vivocure/core/presentation/presentation_history_service.dart';
 import 'package:vivocure/core/sync/row_mappers.dart';
 
 /// Entities pulled from the server, in priority order: operationally
@@ -43,16 +44,18 @@ class PullService {
   Future<int> pullEntity(String entity, {int limit = 500}) async {
     int applied = 0;
     while (true) {
-      final SyncCursor? cursorRow = await (_db.select(_db.syncCursors)
-            ..where((t) => t.entity.equals(entity)))
-          .getSingleOrNull();
+      final SyncCursor? cursorRow = await (_db.select(
+        _db.syncCursors,
+      )..where((t) => t.entity.equals(entity))).getSingleOrNull();
 
-      final NetworkResponse<dynamic> response =
-          await _api.get('/sync/pull', queryParameters: <String, dynamic>{
-        'entity': entity,
-        'limit': limit,
-        if (cursorRow?.cursor != null) 'cursor': cursorRow!.cursor,
-      });
+      final NetworkResponse<dynamic> response = await _api.get(
+        '/sync/pull',
+        queryParameters: <String, dynamic>{
+          'entity': entity,
+          'limit': limit,
+          if (cursorRow?.cursor != null) 'cursor': cursorRow!.cursor,
+        },
+      );
 
       final Map<String, dynamic> data =
           (response.data as Map<String, dynamic>)['data']
@@ -65,15 +68,24 @@ class PullService {
         for (final dynamic raw in rows) {
           await _applyRow(entity, raw as Map<String, dynamic>);
         }
-        await _db.into(_db.syncCursors).insertOnConflictUpdate(SyncCursor(
-              entity: entity,
-              cursor: nextCursor,
-              lastPulledAt: DateTime.now().toUtc().toIso8601String(),
-            ));
+        await _db
+            .into(_db.syncCursors)
+            .insertOnConflictUpdate(
+              SyncCursor(
+                entity: entity,
+                cursor: nextCursor,
+                lastPulledAt: DateTime.now().toUtc().toIso8601String(),
+              ),
+            );
       });
       applied += rows.length;
 
       if (!hasMore) {
+        if (entity == 'dcr' && applied > 0) {
+          // Visits recorded on other devices flow into the permanent
+          // per-customer presentation history.
+          await PresentationHistoryService(_db).rebuildFromLocalDcrs();
+        }
         return applied;
       }
     }
@@ -91,43 +103,45 @@ class PullService {
     switch (entity) {
       case 'doctors':
         if (await _hasPendingLocal(entity, id)) return;
-        await _db.into(_db.doctors).insertOnConflictUpdate(
-              doctorCompanion(row),
-            );
+        await _db
+            .into(_db.doctors)
+            .insertOnConflictUpdate(doctorCompanion(row));
       case 'chemists':
         if (await _hasPendingLocal(entity, id)) return;
-        await _db.into(_db.chemists).insertOnConflictUpdate(
-              chemistCompanion(row),
-            );
+        await _db
+            .into(_db.chemists)
+            .insertOnConflictUpdate(chemistCompanion(row));
       case 'products':
-        await _db.into(_db.products).insertOnConflictUpdate(
-              productCompanion(row),
-            );
+        await _db
+            .into(_db.products)
+            .insertOnConflictUpdate(productCompanion(row));
         await _registerProductMedia(row);
       case 'daily_plan':
         if (await _hasPendingLocal(entity, id)) return;
-        await _db.into(_db.dailyPlans).insertOnConflictUpdate(
-              planCompanion(row),
-            );
+        await _db
+            .into(_db.dailyPlans)
+            .insertOnConflictUpdate(planCompanion(row));
       case 'dcr':
         if (await _hasPendingLocal(entity, id)) return;
-        await _db.into(_db.dcrs).insertOnConflictUpdate(
-              dcrCompanion(row),
-            );
+        await _db.into(_db.dcrs).insertOnConflictUpdate(dcrCompanion(row));
       case 'dcr_products':
-        await _db.into(_db.dcrProductRows).insertOnConflictUpdate(
-              dcrProductCompanion(row),
-            );
+        await _db
+            .into(_db.dcrProductRows)
+            .insertOnConflictUpdate(dcrProductCompanion(row));
       case 'users':
-        await _db.into(_db.usersLite).insertOnConflictUpdate(UsersLiteCompanion(
-              id: Value(row['id'] as String),
-              employeeCode: Value(row['employee_code'] as String?),
-              fullName: Value(row['full_name'] as String?),
-              email: Value(row['email'] as String?),
-              phone: Value(row['phone'] as String?),
-              roleId: Value(row['role_id'] as String?),
-              serverUdt: Value(row['udt'] as String?),
-            ));
+        await _db
+            .into(_db.usersLite)
+            .insertOnConflictUpdate(
+              UsersLiteCompanion(
+                id: Value(row['id'] as String),
+                employeeCode: Value(row['employee_code'] as String?),
+                fullName: Value(row['full_name'] as String?),
+                email: Value(row['email'] as String?),
+                phone: Value(row['phone'] as String?),
+                roleId: Value(row['role_id'] as String?),
+                serverUdt: Value(row['udt'] as String?),
+              ),
+            );
       default:
         debugPrint('[SYNC] Unknown pull entity: $entity');
     }
@@ -137,44 +151,45 @@ class PullService {
     String? localStatus;
     switch (entity) {
       case 'doctors':
-        localStatus = (await (_db.select(_db.doctors)
-                  ..where((t) => t.id.equals(id)))
-                .getSingleOrNull())
-            ?.localStatus;
+        localStatus = (await (_db.select(
+          _db.doctors,
+        )..where((t) => t.id.equals(id))).getSingleOrNull())?.localStatus;
       case 'chemists':
-        localStatus = (await (_db.select(_db.chemists)
-                  ..where((t) => t.id.equals(id)))
-                .getSingleOrNull())
-            ?.localStatus;
+        localStatus = (await (_db.select(
+          _db.chemists,
+        )..where((t) => t.id.equals(id))).getSingleOrNull())?.localStatus;
       case 'daily_plan':
-        localStatus = (await (_db.select(_db.dailyPlans)
-                  ..where((t) => t.id.equals(id)))
-                .getSingleOrNull())
-            ?.localStatus;
+        localStatus = (await (_db.select(
+          _db.dailyPlans,
+        )..where((t) => t.id.equals(id))).getSingleOrNull())?.localStatus;
       case 'dcr':
-        localStatus = (await (_db.select(_db.dcrs)
-                  ..where((t) => t.id.equals(id)))
-                .getSingleOrNull())
-            ?.localStatus;
+        localStatus = (await (_db.select(
+          _db.dcrs,
+        )..where((t) => t.id.equals(id))).getSingleOrNull())?.localStatus;
     }
     return localStatus != null && localStatus != 'synced';
   }
 
   Future<void> _applyMetadata(String kind, Map<String, dynamic> row) async {
-    final String name = (row['role_name'] ??
-            row['category_name'] ??
-            row['status_name'] ??
-            row['priority_code'] ??
-            row['type_name'] ??
-            '')
-        .toString();
-    await _db.into(_db.metadataItems).insertOnConflictUpdate(MetadataItem(
-          kind: kind,
-          id: row['id'] as String,
-          name: name,
-          isEnabled: row['is_enabled'] as bool? ?? true,
-          serverUdt: row['udt'] as String?,
-        ));
+    final String name =
+        (row['role_name'] ??
+                row['category_name'] ??
+                row['status_name'] ??
+                row['priority_code'] ??
+                row['type_name'] ??
+                '')
+            .toString();
+    await _db
+        .into(_db.metadataItems)
+        .insertOnConflictUpdate(
+          MetadataItem(
+            kind: kind,
+            id: row['id'] as String,
+            name: name,
+            isEnabled: row['is_enabled'] as bool? ?? true,
+            serverUdt: row['udt'] as String?,
+          ),
+        );
   }
 
   Future<void> _registerProductMedia(Map<String, dynamic> row) async {
@@ -186,14 +201,15 @@ class PullService {
       if (entry is! Map<String, dynamic>) continue;
       final String? objectKey = entry['object_key'] as String?;
       if (objectKey == null || objectKey.isEmpty) continue;
-      final MediaCacheEntry? existing =
-          await (_db.select(_db.mediaCacheEntries)
-                ..where((t) => t.objectKey.equals(objectKey)))
-              .getSingleOrNull();
+      final MediaCacheEntry? existing = await (_db.select(
+        _db.mediaCacheEntries,
+      )..where((t) => t.objectKey.equals(objectKey))).getSingleOrNull();
       if (existing?.state == 'downloaded') {
         continue;
       }
-      await _db.into(_db.mediaCacheEntries).insertOnConflictUpdate(
+      await _db
+          .into(_db.mediaCacheEntries)
+          .insertOnConflictUpdate(
             MediaCacheEntry(
               objectKey: objectKey,
               entity: 'products',

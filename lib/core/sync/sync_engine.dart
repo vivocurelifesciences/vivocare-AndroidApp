@@ -20,7 +20,8 @@ class SyncState extends ChangeNotifier {
   bool _bootstrapDone = false;
 
   SyncPhase get phase => _phase;
-  bool get isSyncing => _phase == SyncPhase.pushing ||
+  bool get isSyncing =>
+      _phase == SyncPhase.pushing ||
       _phase == SyncPhase.pulling ||
       _phase == SyncPhase.media;
   String? get lastError => _lastError;
@@ -54,10 +55,10 @@ class SyncEngine {
     required AppDatabase db,
     required ApiClient api,
     required ConnectivityService connectivity,
-  })  : _db = db,
-        _connectivity = connectivity,
-        _outbox = OutboxService(db),
-        state = SyncState() {
+  }) : _db = db,
+       _connectivity = connectivity,
+       _outbox = OutboxService(db),
+       state = SyncState() {
     _pull = PullService(db, api);
     _push = PushService(db, api, _outbox);
     _media = MediaCacheService(db);

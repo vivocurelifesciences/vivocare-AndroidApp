@@ -31,6 +31,7 @@ const String _dbKeyStorageKey = 'vivocure_db_cipher_key';
     SyncCursors,
     MediaCacheEntries,
     SyncConflicts,
+    PresentationRecords,
     KvEntries,
   ],
 )
@@ -44,7 +45,8 @@ class AppDatabase extends _$AppDatabase {
         secureStorage ?? const FlutterSecureStorage();
     String? key = await storage.read(key: _dbKeyStorageKey);
     if (key == null || key.isEmpty) {
-      key = const Uuid().v4().replaceAll('-', '') +
+      key =
+          const Uuid().v4().replaceAll('-', '') +
           const Uuid().v4().replaceAll('-', '');
       await storage.write(key: _dbKeyStorageKey, value: key);
     }
@@ -54,14 +56,15 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// In-memory unencrypted database for widget/unit tests.
-  static AppDatabase forTesting() =>
-      AppDatabase(NativeDatabase.memory());
+  static AppDatabase forTesting() => AppDatabase(NativeDatabase.memory());
 
   static QueryExecutor _openExecutor(File file, String cipherKey) {
     return LazyDatabase(() async {
       if (Platform.isAndroid) {
         sqlite3_open.open.overrideFor(
-            sqlite3_open.OperatingSystem.android, openCipherOnAndroid);
+          sqlite3_open.OperatingSystem.android,
+          openCipherOnAndroid,
+        );
         // Workaround for apps that also ship plain sqlite3 via Flutter engine.
         await applyWorkaroundToOpenSqlCipherOnOldAndroidVersions();
       }
@@ -70,7 +73,9 @@ class AppDatabase extends _$AppDatabase {
         isolateSetup: () async {
           if (Platform.isAndroid) {
             sqlite3_open.open.overrideFor(
-                sqlite3_open.OperatingSystem.android, openCipherOnAndroid);
+              sqlite3_open.OperatingSystem.android,
+              openCipherOnAndroid,
+            );
           }
         },
         setup: (CommonDatabase db) {
@@ -80,7 +85,9 @@ class AppDatabase extends _$AppDatabase {
           // on plain sqlite3) — avoids silently writing unencrypted data.
           final result = db.select('PRAGMA cipher_version;');
           if (result.isEmpty) {
-            debugPrint('[DB] WARNING: SQLCipher not active, using plain SQLite');
+            debugPrint(
+              '[DB] WARNING: SQLCipher not active, using plain SQLite',
+            );
           }
           db.execute('PRAGMA foreign_keys = ON;');
         },
@@ -89,27 +96,48 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (Migrator m) async {
-          await m.createAll();
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_plans_date ON daily_plans (visit_date)');
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_dcrs_visit ON dcrs (visit_datetime)');
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_outbox_state ON outbox_ops (state, seq)');
-        },
-      );
+    onCreate: (Migrator m) async {
+      await m.createAll();
+      await _createIndexes();
+    },
+    onUpgrade: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        await m.createTable(presentationRecords);
+        await _createIndexes();
+      }
+    },
+  );
+
+  /// Covering indexes for the hot read paths (home day view, DCR lookups,
+  /// per-customer history, outbox draining).
+  Future<void> _createIndexes() async {
+    const List<String> statements = <String>[
+      'CREATE INDEX IF NOT EXISTS idx_plans_date ON daily_plans (visit_date)',
+      'CREATE INDEX IF NOT EXISTS idx_plans_customer '
+          'ON daily_plans (customer_type, customer_id)',
+      'CREATE INDEX IF NOT EXISTS idx_dcrs_visit ON dcrs (visit_datetime)',
+      'CREATE INDEX IF NOT EXISTS idx_dcrs_plan ON dcrs (plan_id)',
+      'CREATE INDEX IF NOT EXISTS idx_outbox_state ON outbox_ops (state, seq)',
+      'CREATE INDEX IF NOT EXISTS idx_presentation_customer '
+          'ON presentation_records (customer_type, customer_id, shown_at)',
+      'CREATE INDEX IF NOT EXISTS idx_products_enabled '
+          'ON products (is_enabled, display_order)',
+    ];
+    for (final String statement in statements) {
+      await customStatement(statement);
+    }
+  }
 
   // ----------------------------------------------------------- KV helpers
 
   Future<String?> getKv(String key) async {
-    final KvEntry? row = await (select(kvEntries)
-          ..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
+    final KvEntry? row = await (select(
+      kvEntries,
+    )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.value;
   }
 

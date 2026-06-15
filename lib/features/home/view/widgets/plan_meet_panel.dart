@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:vivocure/app/router/app_router.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
@@ -194,14 +196,23 @@ class PlanMeetPanel extends StatelessWidget {
               message:
                   'No doctor/chemist selected yet. Tap Add to create plan.',
             )
+          // A visit with a recorded DCR is done for the day — it leaves the
+          // quick entries list immediately.
+          else if (viewModel.pendingPlanMeetEntriesForDcr.isEmpty)
+            const _EmptySectionCard(
+              message:
+                  'All planned visits for this date have DCRs recorded. '
+                  'Tap Add to plan another visit.',
+            )
           else
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: viewModel.planMeetEntries.length,
+              itemCount: viewModel.pendingPlanMeetEntriesForDcr.length,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (BuildContext context, int index) {
-                final PlanMeetEntry entry = viewModel.planMeetEntries[index];
+                final PlanMeetEntry entry =
+                    viewModel.pendingPlanMeetEntriesForDcr[index];
                 return _PlanEntryCard(
                   entry: entry,
                   viewModel: viewModel,
@@ -337,55 +348,32 @@ class _CustomerDetailsSheet extends StatefulWidget {
 }
 
 class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
-  final Set<String> _selectedMedicineIds = <String>{};
-  static const int _defaultPresentationCount = 3;
+  /// Ordered: this is the exact slide order of the presentation.
+  final List<String> _selectedMedicineIds = <String>[];
 
-  List<MedicinePresentation> get _defaultMedicines {
-    return widget.viewModel.medicinePresentations
-        .take(_defaultPresentationCount)
-        .toList(growable: false);
-  }
-
-  Set<String> get _defaultMedicineIds {
-    return _defaultMedicines
-        .map((MedicinePresentation item) => item.id.trim())
-        .where((String item) => item.isNotEmpty)
-        .toSet();
-  }
-
-  List<MedicinePresentation> get _additionalMedicineOptions {
-    final Set<String> defaultIds = _defaultMedicineIds;
-    return widget.viewModel.medicinePresentations
-        .where(
-          (MedicinePresentation item) => !defaultIds.contains(item.id.trim()),
-        )
-        .toList(growable: false);
-  }
-
-  List<MedicinePresentation> get _additionalSelectedMedicines {
-    final Set<String> defaultIds = _defaultMedicineIds;
-    return widget.viewModel
-        .getMedicinePresentationsByIds(_selectedMedicineIds)
-        .where(
-          (MedicinePresentation item) => !defaultIds.contains(item.id.trim()),
-        )
-        .toList(growable: false);
-  }
-
+  /// Only what the rep explicitly selected — the presentation never
+  /// auto-includes products.
   List<MedicinePresentation> get _selectedMedicines {
-    final Set<String> effectiveIds = <String>{
-      ..._defaultMedicineIds,
-      ..._selectedMedicineIds,
-    };
-    return widget.viewModel.getMedicinePresentationsByIds(effectiveIds);
+    final Map<String, MedicinePresentation> byId =
+        <String, MedicinePresentation>{
+          for (final MedicinePresentation m
+              in widget.viewModel.getMedicinePresentationsByIds(
+                _selectedMedicineIds,
+              ))
+            m.id: m,
+        };
+    return _selectedMedicineIds
+        .map((String id) => byId[id])
+        .whereType<MedicinePresentation>()
+        .toList(growable: false);
   }
 
   Future<void> _openMedicineSelector() async {
     final Set<String>? selectedIds = await showDialog<Set<String>>(
       context: context,
       builder: (_) => _MedicineSelectionDialog(
-        products: _additionalMedicineOptions,
-        initialSelectedIds: _selectedMedicineIds,
+        products: widget.viewModel.medicinePresentations,
+        initialSelectedIds: _selectedMedicineIds.toSet(),
       ),
     );
 
@@ -394,9 +382,34 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
     }
 
     setState(() {
+      // Keep the arranged order; append newly picked products at the end.
+      _selectedMedicineIds.removeWhere(
+        (String id) => !selectedIds.contains(id),
+      );
+      for (final MedicinePresentation m
+          in widget.viewModel.medicinePresentations) {
+        if (selectedIds.contains(m.id) &&
+            !_selectedMedicineIds.contains(m.id)) {
+          _selectedMedicineIds.add(m.id);
+        }
+      }
+    });
+  }
+
+  /// Opens the arrange/shuffle screen with ONLY the selected products and
+  /// applies the order it returns.
+  Future<void> _arrangeSelected() async {
+    final Object? result = await Navigator.of(context).pushNamed(
+      AppRoutes.reorderProducts,
+      arguments: List<String>.of(_selectedMedicineIds),
+    );
+    if (!mounted || result is! List<String>) {
+      return;
+    }
+    setState(() {
       _selectedMedicineIds
         ..clear()
-        ..addAll(selectedIds);
+        ..addAll(result);
     });
   }
 
@@ -542,13 +555,20 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
                         children: [
                           Expanded(
                             child: Text(
-                              'Additional Products (${_additionalSelectedMedicines.length})',
+                              'Presentation Products (${_selectedMedicines.length})',
                               style: Theme.of(context).textTheme.titleSmall
                                   ?.copyWith(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
                                   ),
                             ),
+                          ),
+                          IconButton(
+                            tooltip: 'Arrange presentation order',
+                            onPressed: _selectedMedicines.length < 2
+                                ? null
+                                : _arrangeSelected,
+                            icon: const Icon(Icons.swap_vert, size: 20),
                           ),
                           OutlinedButton.icon(
                             onPressed: _openMedicineSelector,
@@ -561,11 +581,17 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      if (_additionalSelectedMedicines.isNotEmpty)
+                      if (_selectedMedicines.isEmpty)
+                        Text(
+                          'No products selected. Tap "Select Product" to '
+                          'choose what to present.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        )
+                      else
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: _additionalSelectedMedicines
+                          children: _selectedMedicines
                               .map(
                                 (MedicinePresentation item) => Chip(
                                   label: Text(
@@ -595,10 +621,20 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
                 onPressed: _selectedMedicines.isEmpty
                     ? null
                     : () {
+                        // Remember exactly what was presented on this visit so
+                        // the Create DCR sheet pre-fills the same products.
+                        unawaited(
+                          widget.viewModel.recordPresentedSelection(
+                            planId: widget.entry.id,
+                            productIds: List<String>.of(_selectedMedicineIds),
+                          ),
+                        );
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => _MedicinePresentationScreen(
                               presentations: _selectedMedicines,
+                              customerName: customer.name,
+                              isDoctor: widget.entry.isDoctor,
                             ),
                           ),
                         );
@@ -670,9 +706,15 @@ class _MetricPill extends StatelessWidget {
 }
 
 class _MedicinePresentationScreen extends StatefulWidget {
-  const _MedicinePresentationScreen({required this.presentations});
+  const _MedicinePresentationScreen({
+    required this.presentations,
+    required this.customerName,
+    required this.isDoctor,
+  });
 
   final List<MedicinePresentation> presentations;
+  final String customerName;
+  final bool isDoctor;
 
   @override
   State<_MedicinePresentationScreen> createState() =>
@@ -681,18 +723,38 @@ class _MedicinePresentationScreen extends StatefulWidget {
 
 class _MedicinePresentationScreenState
     extends State<_MedicinePresentationScreen> {
+  static const String _introAssetPath = 'assets/images/presentation.jpeg';
+  static const String _logoAssetPath = 'assets/images/vivocure_logo.jpeg';
+
   int _activeSlideIndex = 0;
   late final PageController _pageController;
 
-  List<_PresentationSlide> get _slides => widget.presentations
-      .map(
-        (MedicinePresentation item) => _PresentationSlide(
-          title: item.code.isEmpty ? item.name : '${item.name} (${item.code})',
-          localImagePath: item.localImagePath,
-          imageUrl: item.imageUrl,
-        ),
-      )
-      .toList(growable: false);
+  /// Slide order is fixed: (1) the customer's name as the opening page,
+  /// (2) the company introduction, then (3) the selected products.
+  List<_PresentationSlide> get _slides => <_PresentationSlide>[
+    _PresentationSlide(
+      kind: _SlideKind.title,
+      title: widget.isDoctor
+          ? 'Dr. ${widget.customerName}'
+          : widget.customerName,
+      subtitle: widget.isDoctor
+          ? 'Product presentation'
+          : 'Product presentation • Chemist',
+    ),
+    const _PresentationSlide(
+      kind: _SlideKind.intro,
+      title: 'Company Introduction',
+      assetPath: _introAssetPath,
+    ),
+    ...widget.presentations.map(
+      (MedicinePresentation item) => _PresentationSlide(
+        kind: _SlideKind.product,
+        title: item.code.isEmpty ? item.name : '${item.name} (${item.code})',
+        localImagePath: item.localImagePath,
+        imageUrl: item.imageUrl,
+      ),
+    ),
+  ];
 
   @override
   void initState() {
@@ -856,6 +918,22 @@ class _PresentationActionButton extends StatelessWidget {
 
 extension on _MedicinePresentationScreenState {
   Widget _buildSlideImage(_PresentationSlide slide) {
+    switch (slide.kind) {
+      case _SlideKind.title:
+        return _buildTitleSlide(slide);
+      case _SlideKind.intro:
+        return SizedBox.expand(
+          child: Image.asset(
+            slide.assetPath,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (_, _, _) => _buildSlideFallback(slide.title),
+          ),
+        );
+      case _SlideKind.product:
+        break;
+    }
+
     if (slide.localImagePath.isNotEmpty &&
         File(slide.localImagePath).existsSync()) {
       return SizedBox.expand(
@@ -891,6 +969,78 @@ extension on _MedicinePresentationScreenState {
     }
 
     return _buildSlideFallback(slide.title);
+  }
+
+  /// Opening page: who this presentation is for, with company branding.
+  Widget _buildTitleSlide(_PresentationSlide slide) {
+    final ThemeData theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF0A1B30), Color(0xFF050B14)],
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.asset(
+                  _MedicinePresentationScreenState._logoAssetPath,
+                  width: 132,
+                  height: 132,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                slide.title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                slide.subtitle,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 36),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    'Swipe to begin',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 16,
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSlideFallback(String title) {
@@ -1075,14 +1225,22 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
   }
 }
 
+enum _SlideKind { title, intro, product }
+
 class _PresentationSlide {
   const _PresentationSlide({
+    required this.kind,
     required this.title,
+    this.subtitle = '',
+    this.assetPath = '',
     this.localImagePath = '',
     this.imageUrl = '',
   });
 
+  final _SlideKind kind;
   final String title;
+  final String subtitle;
+  final String assetPath;
   final String localImagePath;
   final String imageUrl;
 }

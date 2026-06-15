@@ -8478,6 +8478,383 @@ class SyncConflictsCompanion extends UpdateCompanion<SyncConflict> {
   }
 }
 
+class $PresentationRecordsTable extends PresentationRecords
+    with TableInfo<$PresentationRecordsTable, PresentationRecord> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PresentationRecordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _customerTypeMeta = const VerificationMeta(
+    'customerType',
+  );
+  @override
+  late final GeneratedColumn<String> customerType = GeneratedColumn<String>(
+    'customer_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _customerIdMeta = const VerificationMeta(
+    'customerId',
+  );
+  @override
+  late final GeneratedColumn<String> customerId = GeneratedColumn<String>(
+    'customer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _shownAtMeta = const VerificationMeta(
+    'shownAt',
+  );
+  @override
+  late final GeneratedColumn<String> shownAt = GeneratedColumn<String>(
+    'shown_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _productIdsJsonMeta = const VerificationMeta(
+    'productIdsJson',
+  );
+  @override
+  late final GeneratedColumn<String> productIdsJson = GeneratedColumn<String>(
+    'product_ids_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    customerType,
+    customerId,
+    shownAt,
+    productIdsJson,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'presentation_records';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PresentationRecord> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('customer_type')) {
+      context.handle(
+        _customerTypeMeta,
+        customerType.isAcceptableOrUnknown(
+          data['customer_type']!,
+          _customerTypeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_customerTypeMeta);
+    }
+    if (data.containsKey('customer_id')) {
+      context.handle(
+        _customerIdMeta,
+        customerId.isAcceptableOrUnknown(data['customer_id']!, _customerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_customerIdMeta);
+    }
+    if (data.containsKey('shown_at')) {
+      context.handle(
+        _shownAtMeta,
+        shownAt.isAcceptableOrUnknown(data['shown_at']!, _shownAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_shownAtMeta);
+    }
+    if (data.containsKey('product_ids_json')) {
+      context.handle(
+        _productIdsJsonMeta,
+        productIdsJson.isAcceptableOrUnknown(
+          data['product_ids_json']!,
+          _productIdsJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_productIdsJsonMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PresentationRecord map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PresentationRecord(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      customerType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_type'],
+      )!,
+      customerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_id'],
+      )!,
+      shownAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}shown_at'],
+      )!,
+      productIdsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}product_ids_json'],
+      )!,
+    );
+  }
+
+  @override
+  $PresentationRecordsTable createAlias(String alias) {
+    return $PresentationRecordsTable(attachedDatabase, alias);
+  }
+}
+
+class PresentationRecord extends DataClass
+    implements Insertable<PresentationRecord> {
+  /// The originating DCR id (stable across devices).
+  final String id;
+  final String customerType;
+  final String customerId;
+  final String shownAt;
+  final String productIdsJson;
+  const PresentationRecord({
+    required this.id,
+    required this.customerType,
+    required this.customerId,
+    required this.shownAt,
+    required this.productIdsJson,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['customer_type'] = Variable<String>(customerType);
+    map['customer_id'] = Variable<String>(customerId);
+    map['shown_at'] = Variable<String>(shownAt);
+    map['product_ids_json'] = Variable<String>(productIdsJson);
+    return map;
+  }
+
+  PresentationRecordsCompanion toCompanion(bool nullToAbsent) {
+    return PresentationRecordsCompanion(
+      id: Value(id),
+      customerType: Value(customerType),
+      customerId: Value(customerId),
+      shownAt: Value(shownAt),
+      productIdsJson: Value(productIdsJson),
+    );
+  }
+
+  factory PresentationRecord.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PresentationRecord(
+      id: serializer.fromJson<String>(json['id']),
+      customerType: serializer.fromJson<String>(json['customerType']),
+      customerId: serializer.fromJson<String>(json['customerId']),
+      shownAt: serializer.fromJson<String>(json['shownAt']),
+      productIdsJson: serializer.fromJson<String>(json['productIdsJson']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'customerType': serializer.toJson<String>(customerType),
+      'customerId': serializer.toJson<String>(customerId),
+      'shownAt': serializer.toJson<String>(shownAt),
+      'productIdsJson': serializer.toJson<String>(productIdsJson),
+    };
+  }
+
+  PresentationRecord copyWith({
+    String? id,
+    String? customerType,
+    String? customerId,
+    String? shownAt,
+    String? productIdsJson,
+  }) => PresentationRecord(
+    id: id ?? this.id,
+    customerType: customerType ?? this.customerType,
+    customerId: customerId ?? this.customerId,
+    shownAt: shownAt ?? this.shownAt,
+    productIdsJson: productIdsJson ?? this.productIdsJson,
+  );
+  PresentationRecord copyWithCompanion(PresentationRecordsCompanion data) {
+    return PresentationRecord(
+      id: data.id.present ? data.id.value : this.id,
+      customerType: data.customerType.present
+          ? data.customerType.value
+          : this.customerType,
+      customerId: data.customerId.present
+          ? data.customerId.value
+          : this.customerId,
+      shownAt: data.shownAt.present ? data.shownAt.value : this.shownAt,
+      productIdsJson: data.productIdsJson.present
+          ? data.productIdsJson.value
+          : this.productIdsJson,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PresentationRecord(')
+          ..write('id: $id, ')
+          ..write('customerType: $customerType, ')
+          ..write('customerId: $customerId, ')
+          ..write('shownAt: $shownAt, ')
+          ..write('productIdsJson: $productIdsJson')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, customerType, customerId, shownAt, productIdsJson);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PresentationRecord &&
+          other.id == this.id &&
+          other.customerType == this.customerType &&
+          other.customerId == this.customerId &&
+          other.shownAt == this.shownAt &&
+          other.productIdsJson == this.productIdsJson);
+}
+
+class PresentationRecordsCompanion extends UpdateCompanion<PresentationRecord> {
+  final Value<String> id;
+  final Value<String> customerType;
+  final Value<String> customerId;
+  final Value<String> shownAt;
+  final Value<String> productIdsJson;
+  final Value<int> rowid;
+  const PresentationRecordsCompanion({
+    this.id = const Value.absent(),
+    this.customerType = const Value.absent(),
+    this.customerId = const Value.absent(),
+    this.shownAt = const Value.absent(),
+    this.productIdsJson = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PresentationRecordsCompanion.insert({
+    required String id,
+    required String customerType,
+    required String customerId,
+    required String shownAt,
+    required String productIdsJson,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       customerType = Value(customerType),
+       customerId = Value(customerId),
+       shownAt = Value(shownAt),
+       productIdsJson = Value(productIdsJson);
+  static Insertable<PresentationRecord> custom({
+    Expression<String>? id,
+    Expression<String>? customerType,
+    Expression<String>? customerId,
+    Expression<String>? shownAt,
+    Expression<String>? productIdsJson,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (customerType != null) 'customer_type': customerType,
+      if (customerId != null) 'customer_id': customerId,
+      if (shownAt != null) 'shown_at': shownAt,
+      if (productIdsJson != null) 'product_ids_json': productIdsJson,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PresentationRecordsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? customerType,
+    Value<String>? customerId,
+    Value<String>? shownAt,
+    Value<String>? productIdsJson,
+    Value<int>? rowid,
+  }) {
+    return PresentationRecordsCompanion(
+      id: id ?? this.id,
+      customerType: customerType ?? this.customerType,
+      customerId: customerId ?? this.customerId,
+      shownAt: shownAt ?? this.shownAt,
+      productIdsJson: productIdsJson ?? this.productIdsJson,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (customerType.present) {
+      map['customer_type'] = Variable<String>(customerType.value);
+    }
+    if (customerId.present) {
+      map['customer_id'] = Variable<String>(customerId.value);
+    }
+    if (shownAt.present) {
+      map['shown_at'] = Variable<String>(shownAt.value);
+    }
+    if (productIdsJson.present) {
+      map['product_ids_json'] = Variable<String>(productIdsJson.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PresentationRecordsCompanion(')
+          ..write('id: $id, ')
+          ..write('customerType: $customerType, ')
+          ..write('customerId: $customerId, ')
+          ..write('shownAt: $shownAt, ')
+          ..write('productIdsJson: $productIdsJson, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $KvEntriesTable extends KvEntries
     with TableInfo<$KvEntriesTable, KvEntry> {
   @override
@@ -8709,6 +9086,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MediaCacheEntriesTable mediaCacheEntries =
       $MediaCacheEntriesTable(this);
   late final $SyncConflictsTable syncConflicts = $SyncConflictsTable(this);
+  late final $PresentationRecordsTable presentationRecords =
+      $PresentationRecordsTable(this);
   late final $KvEntriesTable kvEntries = $KvEntriesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -8727,6 +9106,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     syncCursors,
     mediaCacheEntries,
     syncConflicts,
+    presentationRecords,
     kvEntries,
   ];
 }
@@ -12723,6 +13103,228 @@ typedef $$SyncConflictsTableProcessedTableManager =
       SyncConflict,
       PrefetchHooks Function()
     >;
+typedef $$PresentationRecordsTableCreateCompanionBuilder =
+    PresentationRecordsCompanion Function({
+      required String id,
+      required String customerType,
+      required String customerId,
+      required String shownAt,
+      required String productIdsJson,
+      Value<int> rowid,
+    });
+typedef $$PresentationRecordsTableUpdateCompanionBuilder =
+    PresentationRecordsCompanion Function({
+      Value<String> id,
+      Value<String> customerType,
+      Value<String> customerId,
+      Value<String> shownAt,
+      Value<String> productIdsJson,
+      Value<int> rowid,
+    });
+
+class $$PresentationRecordsTableFilterComposer
+    extends Composer<_$AppDatabase, $PresentationRecordsTable> {
+  $$PresentationRecordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerType => $composableBuilder(
+    column: $table.customerType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerId => $composableBuilder(
+    column: $table.customerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get shownAt => $composableBuilder(
+    column: $table.shownAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get productIdsJson => $composableBuilder(
+    column: $table.productIdsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PresentationRecordsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PresentationRecordsTable> {
+  $$PresentationRecordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customerType => $composableBuilder(
+    column: $table.customerType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customerId => $composableBuilder(
+    column: $table.customerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get shownAt => $composableBuilder(
+    column: $table.shownAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get productIdsJson => $composableBuilder(
+    column: $table.productIdsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PresentationRecordsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PresentationRecordsTable> {
+  $$PresentationRecordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get customerType => $composableBuilder(
+    column: $table.customerType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customerId => $composableBuilder(
+    column: $table.customerId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get shownAt =>
+      $composableBuilder(column: $table.shownAt, builder: (column) => column);
+
+  GeneratedColumn<String> get productIdsJson => $composableBuilder(
+    column: $table.productIdsJson,
+    builder: (column) => column,
+  );
+}
+
+class $$PresentationRecordsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PresentationRecordsTable,
+          PresentationRecord,
+          $$PresentationRecordsTableFilterComposer,
+          $$PresentationRecordsTableOrderingComposer,
+          $$PresentationRecordsTableAnnotationComposer,
+          $$PresentationRecordsTableCreateCompanionBuilder,
+          $$PresentationRecordsTableUpdateCompanionBuilder,
+          (
+            PresentationRecord,
+            BaseReferences<
+              _$AppDatabase,
+              $PresentationRecordsTable,
+              PresentationRecord
+            >,
+          ),
+          PresentationRecord,
+          PrefetchHooks Function()
+        > {
+  $$PresentationRecordsTableTableManager(
+    _$AppDatabase db,
+    $PresentationRecordsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PresentationRecordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PresentationRecordsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$PresentationRecordsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> customerType = const Value.absent(),
+                Value<String> customerId = const Value.absent(),
+                Value<String> shownAt = const Value.absent(),
+                Value<String> productIdsJson = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PresentationRecordsCompanion(
+                id: id,
+                customerType: customerType,
+                customerId: customerId,
+                shownAt: shownAt,
+                productIdsJson: productIdsJson,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String customerType,
+                required String customerId,
+                required String shownAt,
+                required String productIdsJson,
+                Value<int> rowid = const Value.absent(),
+              }) => PresentationRecordsCompanion.insert(
+                id: id,
+                customerType: customerType,
+                customerId: customerId,
+                shownAt: shownAt,
+                productIdsJson: productIdsJson,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PresentationRecordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PresentationRecordsTable,
+      PresentationRecord,
+      $$PresentationRecordsTableFilterComposer,
+      $$PresentationRecordsTableOrderingComposer,
+      $$PresentationRecordsTableAnnotationComposer,
+      $$PresentationRecordsTableCreateCompanionBuilder,
+      $$PresentationRecordsTableUpdateCompanionBuilder,
+      (
+        PresentationRecord,
+        BaseReferences<
+          _$AppDatabase,
+          $PresentationRecordsTable,
+          PresentationRecord
+        >,
+      ),
+      PresentationRecord,
+      PrefetchHooks Function()
+    >;
 typedef $$KvEntriesTableCreateCompanionBuilder =
     KvEntriesCompanion Function({
       required String key,
@@ -12883,6 +13485,8 @@ class $AppDatabaseManager {
       $$MediaCacheEntriesTableTableManager(_db, _db.mediaCacheEntries);
   $$SyncConflictsTableTableManager get syncConflicts =>
       $$SyncConflictsTableTableManager(_db, _db.syncConflicts);
+  $$PresentationRecordsTableTableManager get presentationRecords =>
+      $$PresentationRecordsTableTableManager(_db, _db.presentationRecords);
   $$KvEntriesTableTableManager get kvEntries =>
       $$KvEntriesTableTableManager(_db, _db.kvEntries);
 }

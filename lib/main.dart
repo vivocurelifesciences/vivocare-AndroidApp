@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:vivocure/app/app.dart';
 import 'package:vivocure/core/app_services.dart';
@@ -10,6 +12,9 @@ Future<void> main() async {
   // unconditionally deletes the legacy plaintext password.
   await AuthStorage.migrateFromSharedPreferences();
   await AppServices.init();
-  await BackgroundSync.register();
   runApp(const VivocureApp());
+  // Not needed for first paint — register after the UI is up.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(BackgroundSync.register());
+  });
 }

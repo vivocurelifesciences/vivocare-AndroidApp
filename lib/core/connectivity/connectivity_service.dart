@@ -7,9 +7,8 @@ import 'package:flutter/foundation.dart';
 /// transition (debounced 5s) — the sync engine subscribes to it.
 class ConnectivityService extends ChangeNotifier {
   ConnectivityService({Connectivity? connectivity})
-      : _connectivity = connectivity ?? Connectivity() {
-    _subscription =
-        _connectivity.onConnectivityChanged.listen(_handleChange);
+    : _connectivity = connectivity ?? Connectivity() {
+    _subscription = _connectivity.onConnectivityChanged.listen(_handleChange);
     _init();
   }
 
@@ -31,8 +30,7 @@ class ConnectivityService extends ChangeNotifier {
   }
 
   void _handleChange(List<ConnectivityResult> results) {
-    final bool nowOnline =
-        results.any((r) => r != ConnectivityResult.none);
+    final bool nowOnline = results.any((r) => r != ConnectivityResult.none);
     if (nowOnline == _isOnline) {
       return;
     }

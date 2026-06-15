@@ -520,12 +520,12 @@ class _UpcomingEventsPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-              viewModel.upcomingEventsSectionLabel,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
+            viewModel.upcomingEventsSectionLabel,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
             ),
+          ),
           if (viewModel.isUpcomingEventsLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -610,6 +610,15 @@ class _UpcomingEventTile extends StatelessWidget {
     return Icons.event_outlined;
   }
 
+  /// A real location: non-empty and not a leftover placeholder like "string".
+  String? get _location {
+    final String value = event.customerLocation.trim();
+    if (value.isEmpty || value.toLowerCase() == 'string') {
+      return null;
+    }
+    return value;
+  }
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
@@ -664,29 +673,30 @@ class _UpcomingEventTile extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 2),
-                      Expanded(
-                        child: Text(
-                          event.customerLocation.isEmpty
-                              ? '-'
-                              : event.customerLocation,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                  // Only show a location row when there's a real location.
+                  if (_location != null) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: AppColors.textSecondary,
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(
+                            _location!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

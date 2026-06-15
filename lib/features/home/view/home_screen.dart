@@ -124,8 +124,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       return;
     }
     final SyncPhase phase = AppServices.syncEngine.state.phase;
-    final bool justFinished = _lastSeenSyncPhase != SyncPhase.idle &&
-        phase == SyncPhase.idle;
+    final bool justFinished =
+        _lastSeenSyncPhase != SyncPhase.idle && phase == SyncPhase.idle;
     _lastSeenSyncPhase = phase;
     if (justFinished) {
       context.read<HomeViewModel>().loadCachedProducts();
@@ -210,73 +210,83 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     child: LayoutBuilder(
                       builder:
                           (BuildContext context, BoxConstraints constraints) {
-                        final bool compactSidebar = constraints.maxWidth < 760;
-                        final double sidebarWidth = compactSidebar ? 92 : 228;
+                            final bool compactSidebar =
+                                constraints.maxWidth < 760;
+                            final double sidebarWidth = compactSidebar
+                                ? 92
+                                : 228;
 
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            HomeSidebar(
-                              items: viewModel.menuItems,
-                              width: sidebarWidth,
-                              compact: compactSidebar,
-                              onItemTap: (int index) {
-                                if (_isLoggingOut) {
-                                  return;
-                                }
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                HomeSidebar(
+                                  items: viewModel.menuItems,
+                                  width: sidebarWidth,
+                                  compact: compactSidebar,
+                                  onItemTap: (int index) {
+                                    if (_isLoggingOut) {
+                                      return;
+                                    }
 
-                                if (index == HomeViewModel.logoutMenuIndex) {
-                                  _logout(viewModel);
-                                  return;
-                                }
+                                    if (index ==
+                                        HomeViewModel.logoutMenuIndex) {
+                                      _logout(viewModel);
+                                      return;
+                                    }
 
-                                if (index ==
-                                    HomeViewModel.executionMenuIndex) {
-                                  AppAlertDialog.showInfo(
-                                    context: context,
-                                    title: 'Execution',
-                                    message: 'Work is under progress',
-                                  );
-                                  return;
-                                }
+                                    if (index ==
+                                        HomeViewModel.executionMenuIndex) {
+                                      AppAlertDialog.showInfo(
+                                        context: context,
+                                        title: 'Execution',
+                                        message: 'Work is under progress',
+                                      );
+                                      return;
+                                    }
 
-                                if (index ==
-                                    HomeViewModel.addDoctorMenuIndex) {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.addDoctor);
-                                  return;
-                                }
+                                    if (index ==
+                                        HomeViewModel.addDoctorMenuIndex) {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.addDoctor);
+                                      return;
+                                    }
 
-                                if (index ==
-                                    HomeViewModel.addChemistMenuIndex) {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed(AppRoutes.addChemist);
-                                  return;
-                                }
+                                    if (index ==
+                                        HomeViewModel.addChemistMenuIndex) {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.addChemist);
+                                      return;
+                                    }
 
-                                viewModel.selectMenu(index);
-                                if (index ==
-                                    HomeViewModel.planMeetMenuIndex) {
-                                  viewModel.fetchPlanMeetEntries();
-                                }
-                              },
-                            ),
-                            Expanded(
-                              child: viewModel.isPlanMeetSelected
-                                  ? PlanMeetPanel(
-                                      viewModel: viewModel,
-                                      compact: compactSidebar,
-                                    )
-                                  : HomeDashboard(
-                                      viewModel: viewModel,
-                                      compact: compactSidebar,
-                                    ),
-                            ),
-                          ],
-                        );
-                      },
+                                    viewModel.selectMenu(index);
+                                    if (index ==
+                                        HomeViewModel.planMeetMenuIndex) {
+                                      viewModel.fetchPlanMeetEntries();
+                                    } else if (index ==
+                                        HomeViewModel.homeMenuIndex) {
+                                      // Returning to the dashboard: recompute
+                                      // today's objectives + events from the
+                                      // latest local data.
+                                      _refreshHomeApis(includePlanMeet: false);
+                                    }
+                                  },
+                                ),
+                                Expanded(
+                                  child: viewModel.isPlanMeetSelected
+                                      ? PlanMeetPanel(
+                                          viewModel: viewModel,
+                                          compact: compactSidebar,
+                                        )
+                                      : HomeDashboard(
+                                          viewModel: viewModel,
+                                          compact: compactSidebar,
+                                        ),
+                                ),
+                              ],
+                            );
+                          },
                     ),
                   ),
                 ],

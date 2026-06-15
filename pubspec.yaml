@@ -82,7 +82,6 @@ flutter:
     - assets/presentations/ilovepdf_merged_compat.pdf
     - assets/presentations/ilovepdf_merged_flat.pdf
     - assets/presentations/slides/
-    - shorebird.yaml
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

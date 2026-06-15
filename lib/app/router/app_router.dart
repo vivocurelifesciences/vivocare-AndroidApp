@@ -10,6 +10,7 @@ import 'package:vivocure/features/auth/view/login_success_screen.dart';
 import 'package:vivocure/features/auth/view_model/login_view_model.dart';
 import 'package:vivocure/features/auth/repository/auth_repository.dart';
 import 'package:vivocure/features/home/view/home_screen.dart';
+import 'package:vivocure/features/home/view/product_reorder_screen.dart';
 import 'package:vivocure/features/home/view_model/home_view_model.dart';
 import 'package:vivocure/features/splash/view/splash_screen.dart';
 import 'package:vivocure/features/splash/view_model/splash_view_model.dart';
@@ -23,6 +24,7 @@ class AppRoutes {
   static const String addDoctor = '/add-doctor';
   static const String addChemist = '/add-chemist';
   static const String syncInbox = '/sync-inbox';
+  static const String reorderProducts = '/reorder-products';
 }
 
 class AppRouter {
@@ -82,6 +84,17 @@ class AppRouter {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => const SyncInboxScreen(),
+        );
+      case AppRoutes.reorderProducts:
+        // Optional List<String> of product ids = arrange only that subset
+        // (presentation prep) and return the new order; null = full catalog.
+        final Object? reorderArgs = settings.arguments;
+        final List<String>? selectedIds = reorderArgs is List<String>
+            ? reorderArgs
+            : null;
+        return MaterialPageRoute<List<String>>(
+          settings: settings,
+          builder: (_) => ProductReorderScreen(selectedIds: selectedIds),
         );
       default:
         return MaterialPageRoute<void>(

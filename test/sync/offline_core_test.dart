@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivocure/core/db/app_database.dart';
 import 'package:vivocure/core/sync/outbox_service.dart';
@@ -131,8 +132,7 @@ void main() {
       expect(ops.single.op, 'create');
     });
 
-    test('plan create skips local duplicates for same date+customer',
-        () async {
+    test('plan create skips local duplicates for same date+customer', () async {
       final repo = PlanRepository(db);
       final date = DateTime(2026, 6, 11);
       final first = await repo.createPlans(
@@ -147,15 +147,15 @@ void main() {
       expect(second, isEmpty);
     });
 
-    test(
-        'createDcr enforces one-per-plan, completes the plan and updates '
+    test('createDcr enforces one-per-plan, completes the plan and updates '
         'doctor support values (server side effects mirrored)', () async {
       final doctorRepo = DoctorRepository(db);
       final planRepo = PlanRepository(db);
       final dcrRepo = DcrRepository(db);
 
-      final String doctorId =
-          await doctorRepo.createDoctor(<String, dynamic>{'first_name': 'A'});
+      final String doctorId = await doctorRepo.createDoctor(<String, dynamic>{
+        'first_name': 'A',
+      });
       final plans = await planRepo.createPlans(
         visitDate: DateTime(2026, 6, 11),
         customers: [(customerId: doctorId, customerType: 'doctor')],
@@ -181,15 +181,158 @@ void main() {
       );
     });
 
+    test('dcrsBetween returns same-day DCRs (date-only bounds, regression: '
+        'ISO strings without millis were excluded)', () async {
+      final doctorRepo = DoctorRepository(db);
+      final planRepo = PlanRepository(db);
+      final dcrRepo = DcrRepository(db);
+
+      final String doctorId = await doctorRepo.createDoctor(<String, dynamic>{
+        'first_name': 'D',
+      });
+      final DateTime today = DateTime.now();
+      final plans = await planRepo.createPlans(
+        visitDate: today,
+        customers: [(customerId: doctorId, customerType: 'doctor')],
+      );
+      await dcrRepo.createDcr(planId: plans.single);
+
+      // Today-only filter: start == end == today (date-only).
+      final sameDay = await dcrRepo.dcrsBetween(
+        start: DateTime(today.year, today.month, today.day),
+        end: DateTime(today.year, today.month, today.day),
+      );
+      expect(sameDay, hasLength(1));
+
+      // A range ending yesterday must exclude it.
+      final before = await dcrRepo.dcrsBetween(
+        end: DateTime(
+          today.year,
+          today.month,
+          today.day,
+        ).subtract(const Duration(days: 1)),
+      );
+      expect(before, isEmpty);
+    });
+
     test('deleting an offline-created chemist leaves no trace', () async {
       final repo = ChemistRepository(db);
-      final String id =
-          await repo.createChemist(<String, dynamic>{'full_name': 'MedPlus'});
+      final String id = await repo.createChemist(<String, dynamic>{
+        'full_name': 'MedPlus',
+      });
       await repo.deleteChemist(id);
 
       expect(await repo.getById(id), isNull);
       expect(await outbox.nextBatch(), isEmpty);
     });
+  });
+
+  group('Presentation history (permanent per-customer)', () {
+    test('createDcr with products records a visit; union is recency-ordered '
+        'and survives across multiple visits', () async {
+      final doctorRepo = DoctorRepository(db);
+      final planRepo = PlanRepository(db);
+      final dcrRepo = DcrRepository(db);
+
+      final String doctorId = await doctorRepo.createDoctor(<String, dynamic>{
+        'first_name': 'A',
+      });
+
+      final plansA = await planRepo.createPlans(
+        visitDate: DateTime(2026, 6, 1),
+        customers: [(customerId: doctorId, customerType: 'doctor')],
+      );
+      await dcrRepo.createDcr(
+        planId: plansA.single,
+        productIds: <String>['p1', 'p2'],
+      );
+
+      final plansB = await planRepo.createPlans(
+        visitDate: DateTime(2026, 6, 10),
+        customers: [(customerId: doctorId, customerType: 'doctor')],
+      );
+      await dcrRepo.createDcr(
+        planId: plansB.single,
+        productIds: <String>['p3', 'p1'],
+      );
+
+      final visits = await dcrRepo.history.historyForCustomer(
+        customerType: 'doctor',
+        customerId: doctorId,
+      );
+      expect(visits, hasLength(2));
+      // Most recent first.
+      expect(visits.first.productIds, <String>['p3', 'p1']);
+      expect(visits.last.productIds, <String>['p1', 'p2']);
+
+      final union = await dcrRepo.history.allShownProductIds(
+        customerType: 'doctor',
+        customerId: doctorId,
+      );
+      expect(union, <String>['p3', 'p1', 'p2']);
+    });
+
+    test('deleting a DCR removes its visit from the history', () async {
+      final doctorRepo = DoctorRepository(db);
+      final planRepo = PlanRepository(db);
+      final dcrRepo = DcrRepository(db);
+
+      final String doctorId = await doctorRepo.createDoctor(<String, dynamic>{
+        'first_name': 'B',
+      });
+      final plans = await planRepo.createPlans(
+        visitDate: DateTime(2026, 6, 11),
+        customers: [(customerId: doctorId, customerType: 'doctor')],
+      );
+      final String dcrId = await dcrRepo.createDcr(
+        planId: plans.single,
+        productIds: <String>['p9'],
+      );
+      await dcrRepo.deleteDcr(dcrId);
+
+      final visits = await dcrRepo.history.historyForCustomer(
+        customerType: 'doctor',
+        customerId: doctorId,
+      );
+      expect(visits, isEmpty);
+    });
+
+    test(
+      'rebuildFromLocalDcrs backfills records from pulled DCR rows',
+      () async {
+        final doctorRepo = DoctorRepository(db);
+        final planRepo = PlanRepository(db);
+        final dcrRepo = DcrRepository(db);
+
+        final String doctorId = await doctorRepo.createDoctor(<String, dynamic>{
+          'first_name': 'C',
+        });
+        final plans = await planRepo.createPlans(
+          visitDate: DateTime(2026, 6, 5),
+          customers: [(customerId: doctorId, customerType: 'doctor')],
+        );
+
+        // Simulate a DCR that arrived via pull (synced, no local record yet).
+        await db
+            .into(db.dcrs)
+            .insert(
+              DcrsCompanion.insert(
+                id: 'dcr-pulled-1',
+                planId: Value(plans.single),
+                visitDatetime: '2026-06-05T00:00:00',
+                productIds: const Value('p5,p6'),
+              ),
+            );
+
+        await dcrRepo.history.rebuildFromLocalDcrs();
+
+        final union = await dcrRepo.history.allShownProductIds(
+          customerType: 'doctor',
+          customerId: doctorId,
+        );
+        expect(union, <String>['p5', 'p6']);
+      },
+    );
   });
 
   group('KV + device id', () {

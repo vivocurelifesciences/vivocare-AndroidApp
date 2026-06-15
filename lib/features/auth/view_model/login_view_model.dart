@@ -79,6 +79,8 @@ class LoginViewModel extends ChangeNotifier {
         'employee_code': response.data.user.employeeCode,
         'email': response.data.user.email,
       });
+      // Arms the 15-day session window.
+      await AuthStorage.markLogin();
 
       // First sync (or catch-up): runs in the background — the home screens
       // are reactive to the local database and fill in as data lands.
@@ -99,11 +101,15 @@ class LoginViewModel extends ChangeNotifier {
         arguments: homeUserContext,
       );
     } on NetworkException catch (error) {
-      final bool offline = error.type == NetworkExceptionType.noInternet ||
+      final bool offline =
+          error.type == NetworkExceptionType.noInternet ||
           error.type == NetworkExceptionType.timeout;
       if (offline) {
-        final bool handled =
-            await _tryOfflineLogin(context, username, password);
+        final bool handled = await _tryOfflineLogin(
+          context,
+          username,
+          password,
+        );
         if (handled) {
           return;
         }
@@ -148,6 +154,8 @@ class LoginViewModel extends ChangeNotifier {
       return false;
     }
     debugPrint('[AUTH] Offline login for $username');
+    // Offline-verified sign-in also re-arms the 15-day session window.
+    await AuthStorage.markLogin();
     if (!context.mounted) {
       return true;
     }

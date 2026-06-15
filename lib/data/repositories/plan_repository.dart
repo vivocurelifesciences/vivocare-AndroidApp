@@ -30,30 +30,35 @@ class PlanRepository {
 
   Future<List<DailyPlan>> plansForDate(DateTime date) =>
       (_db.select(_db.dailyPlans)
-            ..where((t) =>
-                t.visitDate.equals(dateKey(date)) & t.isEnabled.equals(true))
+            ..where(
+              (t) =>
+                  t.visitDate.equals(dateKey(date)) & t.isEnabled.equals(true),
+            )
             ..orderBy([(t) => OrderingTerm.asc(t.cdt)]))
           .get();
 
   Stream<List<DailyPlan>> watchPlansForDate(DateTime date) =>
       (_db.select(_db.dailyPlans)
-            ..where((t) =>
-                t.visitDate.equals(dateKey(date)) & t.isEnabled.equals(true))
+            ..where(
+              (t) =>
+                  t.visitDate.equals(dateKey(date)) & t.isEnabled.equals(true),
+            )
             ..orderBy([(t) => OrderingTerm.asc(t.cdt)]))
           .watch();
 
-  Future<DailyPlan?> getById(String id) =>
-      (_db.select(_db.dailyPlans)..where((t) => t.id.equals(id)))
-          .getSingleOrNull();
+  Future<DailyPlan?> getById(String id) => (_db.select(
+    _db.dailyPlans,
+  )..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<PlanCounts> todayPlanCounts() async {
     final List<DailyPlan> plans = await plansForDate(DateTime.now());
-    final int doctors =
-        plans.where((p) => p.customerType == 'doctor').length;
-    final int chemists =
-        plans.where((p) => p.customerType == 'chemist').length;
+    final int doctors = plans.where((p) => p.customerType == 'doctor').length;
+    final int chemists = plans.where((p) => p.customerType == 'chemist').length;
     return PlanCounts(
-        total: plans.length, doctors: doctors, chemists: chemists);
+      total: plans.length,
+      doctors: doctors,
+      chemists: chemists,
+    );
   }
 
   /// Bulk create (mirrors POST /plans). Skips entries that already have an
@@ -68,27 +73,33 @@ class PlanRepository {
     final List<String> created = <String>[];
     await _db.transaction(() async {
       for (final customer in customers) {
-        final DailyPlan? duplicate = await (_db.select(_db.dailyPlans)
-              ..where((t) =>
-                  t.visitDate.equals(day) &
-                  t.customerId.equals(customer.customerId) &
-                  t.customerType.equals(customer.customerType) &
-                  t.isEnabled.equals(true)))
-            .getSingleOrNull();
+        final DailyPlan? duplicate =
+            await (_db.select(_db.dailyPlans)..where(
+                  (t) =>
+                      t.visitDate.equals(day) &
+                      t.customerId.equals(customer.customerId) &
+                      t.customerType.equals(customer.customerType) &
+                      t.isEnabled.equals(true),
+                ))
+                .getSingleOrNull();
         if (duplicate != null) {
           continue;
         }
         final String id = const Uuid().v7();
-        await _db.into(_db.dailyPlans).insert(DailyPlansCompanion.insert(
-              id: id,
-              visitDate: day,
-              customerId: customer.customerId,
-              customerType: Value(customer.customerType),
-              visitStatus: const Value(1),
-              cdt: Value(now),
-              localStatus: const Value('pending_create'),
-              locallyChangedAt: Value(now),
-            ));
+        await _db
+            .into(_db.dailyPlans)
+            .insert(
+              DailyPlansCompanion.insert(
+                id: id,
+                visitDate: day,
+                customerId: customer.customerId,
+                customerType: Value(customer.customerType),
+                visitStatus: const Value(1),
+                cdt: Value(now),
+                localStatus: const Value('pending_create'),
+                locallyChangedAt: Value(now),
+              ),
+            );
         await _outbox.enqueue(
           entity: 'daily_plan',
           entityId: id,
@@ -115,15 +126,17 @@ class PlanRepository {
       return;
     }
     await _db.transaction(() async {
-      await (_db.update(_db.dailyPlans)..where((t) => t.id.equals(id)))
-          .write(DailyPlansCompanion(
-        visitStatus: Value(visitStatus),
-        localStatus: Value(existing.localStatus == 'pending_create'
-            ? 'pending_create'
-            : 'pending_update'),
-        locallyChangedAt:
-            Value(DateTime.now().toUtc().toIso8601String()),
-      ));
+      await (_db.update(_db.dailyPlans)..where((t) => t.id.equals(id))).write(
+        DailyPlansCompanion(
+          visitStatus: Value(visitStatus),
+          localStatus: Value(
+            existing.localStatus == 'pending_create'
+                ? 'pending_create'
+                : 'pending_update',
+          ),
+          locallyChangedAt: Value(DateTime.now().toUtc().toIso8601String()),
+        ),
+      );
       await _outbox.enqueue(
         entity: 'daily_plan',
         entityId: id,
@@ -146,12 +159,13 @@ class PlanRepository {
       return;
     }
     await _db.transaction(() async {
-      await (_db.update(_db.dailyPlans)..where((t) => t.id.equals(id)))
-          .write(const DailyPlansCompanion(
-        isEnabled: Value(false),
-        status: Value('deleted'),
-        localStatus: Value('pending_delete'),
-      ));
+      await (_db.update(_db.dailyPlans)..where((t) => t.id.equals(id))).write(
+        const DailyPlansCompanion(
+          isEnabled: Value(false),
+          status: Value('deleted'),
+          localStatus: Value('pending_delete'),
+        ),
+      );
       await _outbox.enqueue(
         entity: 'daily_plan',
         entityId: id,
@@ -160,8 +174,7 @@ class PlanRepository {
         baseServerUdt: existing.serverUdt,
       );
       if (existing.localStatus == 'pending_create') {
-        await (_db.delete(_db.dailyPlans)..where((t) => t.id.equals(id)))
-            .go();
+        await (_db.delete(_db.dailyPlans)..where((t) => t.id.equals(id))).go();
       }
     });
     SyncTriggers.mutated();

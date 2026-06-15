@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/db/app_database.dart';
+import 'package:vivocure/core/widgets/app_page_backdrop.dart';
 
 /// "Changes needing attention": parked outbox ops (rejected by the server or
 /// repeatedly failing) and recorded conflict resolutions. The rep can retry
@@ -21,56 +22,68 @@ class _SyncInboxScreenState extends State<SyncInboxScreen> {
     final AppDatabase db = AppServices.db;
     return Scaffold(
       appBar: AppBar(title: const Text('Sync activity')),
-      body: ListView(
-        children: <Widget>[
-          _sectionTitle(context, 'Changes needing attention'),
-          StreamBuilder<List<OutboxOp>>(
-            stream: AppServices.syncEngine.outbox.watchParked(),
-            builder: (context, snapshot) {
-              final List<OutboxOp> parked = snapshot.data ?? <OutboxOp>[];
-              if (parked.isEmpty) {
-                return const ListTile(
-                  dense: true,
-                  leading: Icon(Icons.check_circle_outline,
-                      color: Colors.green),
-                  title: Text('Nothing needs your attention'),
-                );
-              }
-              return Column(
-                children: parked.map((op) => _parkedTile(op)).toList(),
-              );
-            },
+      body: AppPageBackdrop(
+        child: SafeArea(
+          child: Center(
+            // Tablet-friendly reading width.
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: _buildList(db),
+            ),
           ),
-          const Divider(),
-          _sectionTitle(context, 'Resolved conflicts (log)'),
-          StreamBuilder<List<SyncConflict>>(
-            stream: (db.select(db.syncConflicts)
-                  ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
-                  ..limit(50))
-                .watch(),
-            builder: (context, snapshot) {
-              final List<SyncConflict> conflicts =
-                  snapshot.data ?? <SyncConflict>[];
-              if (conflicts.isEmpty) {
-                return const ListTile(
-                  dense: true,
-                  title: Text('No conflicts recorded'),
-                );
-              }
-              return Column(
-                children: conflicts.map(_conflictTile).toList(),
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  Widget _buildList(AppDatabase db) {
+    return ListView(
+      children: <Widget>[
+        _sectionTitle(context, 'Changes needing attention'),
+        StreamBuilder<List<OutboxOp>>(
+          stream: AppServices.syncEngine.outbox.watchParked(),
+          builder: (context, snapshot) {
+            final List<OutboxOp> parked = snapshot.data ?? <OutboxOp>[];
+            if (parked.isEmpty) {
+              return const ListTile(
+                dense: true,
+                leading: Icon(Icons.check_circle_outline, color: Colors.green),
+                title: Text('Nothing needs your attention'),
+              );
+            }
+            return Column(
+              children: parked.map((op) => _parkedTile(op)).toList(),
+            );
+          },
+        ),
+        const Divider(),
+        _sectionTitle(context, 'Resolved conflicts (log)'),
+        StreamBuilder<List<SyncConflict>>(
+          stream:
+              (db.select(db.syncConflicts)
+                    ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+                    ..limit(50))
+                  .watch(),
+          builder: (context, snapshot) {
+            final List<SyncConflict> conflicts =
+                snapshot.data ?? <SyncConflict>[];
+            if (conflicts.isEmpty) {
+              return const ListTile(
+                dense: true,
+                title: Text('No conflicts recorded'),
+              );
+            }
+            return Column(children: conflicts.map(_conflictTile).toList());
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _sectionTitle(BuildContext context, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-        child: Text(title, style: Theme.of(context).textTheme.titleSmall),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+  );
 
   Widget _parkedTile(OutboxOp op) {
     return ListTile(
@@ -142,27 +155,27 @@ class _SyncInboxScreenState extends State<SyncInboxScreen> {
     switch (op.entity) {
       case 'doctors':
         if (op.op == 'create') {
-          await (db.delete(db.doctors)..where((t) => t.id.equals(op.entityId)))
-              .go();
+          await (db.delete(
+            db.doctors,
+          )..where((t) => t.id.equals(op.entityId))).go();
         } else {
           await (db.update(db.doctors)..where((t) => t.id.equals(op.entityId)))
               .write(const DoctorsCompanion(localStatus: Value('synced')));
         }
       case 'chemists':
         if (op.op == 'create') {
-          await (db.delete(db.chemists)
-                ..where((t) => t.id.equals(op.entityId)))
-              .go();
+          await (db.delete(
+            db.chemists,
+          )..where((t) => t.id.equals(op.entityId))).go();
         } else {
-          await (db.update(db.chemists)
-                ..where((t) => t.id.equals(op.entityId)))
+          await (db.update(db.chemists)..where((t) => t.id.equals(op.entityId)))
               .write(const ChemistsCompanion(localStatus: Value('synced')));
         }
       case 'daily_plan':
         if (op.op == 'create') {
-          await (db.delete(db.dailyPlans)
-                ..where((t) => t.id.equals(op.entityId)))
-              .go();
+          await (db.delete(
+            db.dailyPlans,
+          )..where((t) => t.id.equals(op.entityId))).go();
         } else {
           await (db.update(db.dailyPlans)
                 ..where((t) => t.id.equals(op.entityId)))
@@ -170,8 +183,11 @@ class _SyncInboxScreenState extends State<SyncInboxScreen> {
         }
       case 'dcr':
         if (op.op == 'create') {
-          await (db.delete(db.dcrs)..where((t) => t.id.equals(op.entityId)))
-              .go();
+          await (db.delete(
+            db.dcrs,
+          )..where((t) => t.id.equals(op.entityId))).go();
+          // The visit never reached the server — drop its history record too.
+          await AppServices.dcrs.history.removeVisit(op.entityId);
         } else {
           await (db.update(db.dcrs)..where((t) => t.id.equals(op.entityId)))
               .write(const DcrsCompanion(localStatus: Value('synced')));

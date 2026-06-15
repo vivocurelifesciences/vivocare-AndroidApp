@@ -64,10 +64,7 @@ class _AppRevealState extends State<AppReveal>
 
         return Opacity(
           opacity: value,
-          child: Transform.translate(
-            offset: translatedOffset,
-            child: child,
-          ),
+          child: Transform.translate(offset: translatedOffset, child: child),
         );
       },
     );

@@ -16,8 +16,9 @@ import 'package:vivocure/core/network/network_response.dart';
 /// it reads/writes the local database via repositories.
 class ApiClient {
   ApiClient({NetworkClient? networkClient})
-      : _client = networkClient ??
-            NetworkClient(scheme: ApiConfig.scheme, host: ApiConfig.host);
+    : _client =
+          networkClient ??
+          NetworkClient(scheme: ApiConfig.scheme, host: ApiConfig.host);
 
   final NetworkClient _client;
   Future<bool>? _refreshInFlight;
@@ -29,45 +30,41 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? queryParameters,
     Map<String, String>? headers,
-  }) =>
-      _authedRequest(
-        method: HttpMethod.get,
-        path: path,
-        queryParameters: queryParameters,
-        headers: headers,
-      );
+  }) => _authedRequest(
+    method: HttpMethod.get,
+    path: path,
+    queryParameters: queryParameters,
+    headers: headers,
+  );
 
   Future<NetworkResponse<dynamic>> post(
     String path, {
     Object? body,
     Map<String, dynamic>? queryParameters,
     Map<String, String>? headers,
-  }) =>
-      _authedRequest(
-        method: HttpMethod.post,
-        path: path,
-        body: body,
-        queryParameters: queryParameters,
-        headers: headers,
-      );
+  }) => _authedRequest(
+    method: HttpMethod.post,
+    path: path,
+    body: body,
+    queryParameters: queryParameters,
+    headers: headers,
+  );
 
   Future<NetworkResponse<dynamic>> put(
     String path, {
     Object? body,
     Map<String, String>? headers,
-  }) =>
-      _authedRequest(
-        method: HttpMethod.put,
-        path: path,
-        body: body,
-        headers: headers,
-      );
+  }) => _authedRequest(
+    method: HttpMethod.put,
+    path: path,
+    body: body,
+    headers: headers,
+  );
 
   Future<NetworkResponse<dynamic>> deleteRequest(
     String path, {
     Map<String, String>? headers,
-  }) =>
-      _authedRequest(method: HttpMethod.delete, path: path, headers: headers);
+  }) => _authedRequest(method: HttpMethod.delete, path: path, headers: headers);
 
   Future<NetworkResponse<dynamic>> _authedRequest({
     required HttpMethod method,
@@ -98,7 +95,7 @@ class ApiClient {
     } on NetworkException catch (error) {
       final bool unauthorized =
           error.type == NetworkExceptionType.unauthorized ||
-              error.statusCode == 401;
+          error.statusCode == 401;
       if (!unauthorized || isRetry) {
         rethrow;
       }
@@ -146,8 +143,8 @@ class ApiClient {
       }
       await AuthStorage.saveSession(
         accessToken: access,
-        refreshToken:
-            (data['refresh_token'] ?? current.refreshToken).toString(),
+        refreshToken: (data['refresh_token'] ?? current.refreshToken)
+            .toString(),
         tokenType: (data['token_type'] ?? current.tokenType).toString(),
       );
       debugPrint('[API] Access token refreshed');

@@ -6,6 +6,7 @@ import 'package:provider/single_child_widget.dart';
 import 'package:vivocure/app/router/app_route_observer.dart';
 import 'package:vivocure/app/router/app_router.dart';
 import 'package:vivocure/core/app_services.dart';
+import 'package:vivocure/core/auth/auth_storage.dart';
 import 'package:vivocure/core/connectivity/connectivity_service.dart';
 import 'package:vivocure/core/sync/background_sync.dart';
 import 'package:vivocure/core/sync/sync_engine.dart';
@@ -18,8 +19,7 @@ class VivocureApp extends StatefulWidget {
   State<VivocureApp> createState() => _VivocureAppState();
 }
 
-class _VivocureAppState extends State<VivocureApp>
-    with WidgetsBindingObserver {
+class _VivocureAppState extends State<VivocureApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -35,6 +35,8 @@ class _VivocureAppState extends State<VivocureApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Slide the 15-day inactivity window forward on every active use.
+      unawaited(AuthStorage.touchActivity());
       unawaited(AppServices.syncEngine.syncNow(reason: 'resume'));
     } else if (state == AppLifecycleState.paused &&
         AppServices.syncEngine.state.pendingOps > 0) {

@@ -13,7 +13,7 @@ import 'package:vivocure/core/db/app_database.dart';
 /// download time because they expire (~10h) while object keys are stable.
 class MediaCacheService {
   MediaCacheService(this._db, {http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+    : _http = httpClient ?? http.Client();
 
   final AppDatabase _db;
   final http.Client _http;
@@ -32,10 +32,9 @@ class MediaCacheService {
   /// Best-effort download of all pending media. Never throws — media must not
   /// block data sync.
   Future<void> downloadPending({int maxConcurrent = 3}) async {
-    final List<MediaCacheEntry> pending =
-        await (_db.select(_db.mediaCacheEntries)
-              ..where((t) => t.state.isNotValue('downloaded')))
-            .get();
+    final List<MediaCacheEntry> pending = await (_db.select(
+      _db.mediaCacheEntries,
+    )..where((t) => t.state.isNotValue('downloaded'))).get();
     if (pending.isEmpty) {
       return;
     }
@@ -52,15 +51,21 @@ class MediaCacheService {
       if (url == null || url.isEmpty) {
         return;
       }
-      final http.Response response =
-          await _http.get(Uri.parse(url)).timeout(const Duration(seconds: 60));
+      final http.Response response = await _http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 60));
       if (response.statusCode != 200) {
         throw HttpException('status ${response.statusCode}');
       }
-      final String fileName = entry.objectKey.replaceAll(RegExp(r'[^\w.]+'), '_');
+      final String fileName = entry.objectKey.replaceAll(
+        RegExp(r'[^\w.]+'),
+        '_',
+      );
       final File file = File(p.join(dir.path, fileName));
       await file.writeAsBytes(response.bodyBytes, flush: true);
-      await _db.into(_db.mediaCacheEntries).insertOnConflictUpdate(
+      await _db
+          .into(_db.mediaCacheEntries)
+          .insertOnConflictUpdate(
             entry.copyWith(
               localPath: Value(file.path),
               state: 'downloaded',
@@ -69,9 +74,9 @@ class MediaCacheService {
           );
     } catch (error) {
       debugPrint('[MEDIA] download failed ${entry.objectKey}: $error');
-      await _db.into(_db.mediaCacheEntries).insertOnConflictUpdate(
-            entry.copyWith(state: 'failed'),
-          );
+      await _db
+          .into(_db.mediaCacheEntries)
+          .insertOnConflictUpdate(entry.copyWith(state: 'failed'));
     }
   }
 
@@ -81,31 +86,36 @@ class MediaCacheService {
     if (entry.entity != 'products' || entry.entityId == null) {
       return null;
     }
-    final Product? product = await (_db.select(_db.products)
-          ..where((t) => t.id.equals(entry.entityId!)))
-        .getSingleOrNull();
+    final Product? product = await (_db.select(
+      _db.products,
+    )..where((t) => t.id.equals(entry.entityId!))).getSingleOrNull();
     final String? json = product?.imageUrlsJson;
     if (json == null) {
       return null;
     }
-    final match = RegExp('"object_key"\\s*:\\s*"${RegExp.escape(entry.objectKey)}"[^}]*"url"\\s*:\\s*"([^"]+)"')
-        .firstMatch(json);
+    final match = RegExp(
+      '"object_key"\\s*:\\s*"${RegExp.escape(entry.objectKey)}"[^}]*"url"\\s*:\\s*"([^"]+)"',
+    ).firstMatch(json);
     if (match != null) {
       return match.group(1)?.replaceAll(r'\/', '/');
     }
     // url may precede object_key in the JSON; fall back to a tolerant scan.
-    final alt = RegExp('"url"\\s*:\\s*"([^"]+)"[^}]*"object_key"\\s*:\\s*"${RegExp.escape(entry.objectKey)}"')
-        .firstMatch(json);
+    final alt = RegExp(
+      '"url"\\s*:\\s*"([^"]+)"[^}]*"object_key"\\s*:\\s*"${RegExp.escape(entry.objectKey)}"',
+    ).firstMatch(json);
     return alt?.group(1)?.replaceAll(r'\/', '/');
   }
 
   /// Local path for a product's primary image, if downloaded.
   Future<String?> localPathForProduct(String productId) async {
-    final MediaCacheEntry? entry = await (_db.select(_db.mediaCacheEntries)
-          ..where((t) =>
-              t.entityId.equals(productId) & t.state.equals('downloaded'))
-          ..limit(1))
-        .getSingleOrNull();
+    final MediaCacheEntry? entry =
+        await (_db.select(_db.mediaCacheEntries)
+              ..where(
+                (t) =>
+                    t.entityId.equals(productId) & t.state.equals('downloaded'),
+              )
+              ..limit(1))
+            .getSingleOrNull();
     final String? path = entry?.localPath;
     if (path == null) {
       return null;

@@ -31,10 +31,13 @@ class PushService {
       final String deviceId = await _db.deviceId();
       NetworkResponse<dynamic> response;
       try {
-        response = await _api.post('/sync/push', body: <String, dynamic>{
-          'device_id': deviceId,
-          'ops': batch
-              .map((op) => <String, dynamic>{
+        response = await _api.post(
+          '/sync/push',
+          body: <String, dynamic>{
+            'device_id': deviceId,
+            'ops': batch
+                .map(
+                  (op) => <String, dynamic>{
                     'mutation_id': op.mutationId,
                     'entity': op.entity,
                     'entity_id': op.entityId,
@@ -42,9 +45,11 @@ class PushService {
                     'payload': jsonDecode(op.payloadJson),
                     'base_server_udt': op.baseServerUdt,
                     'client_changed_at': op.clientChangedAt,
-                  })
-              .toList(),
-        });
+                  },
+                )
+                .toList(),
+          },
+        );
       } catch (error) {
         // Transport failure: whole batch goes back to pending for retry.
         for (final OutboxOp op in batch) {
@@ -60,9 +65,9 @@ class PushService {
           data['results'] as List<dynamic>? ?? <dynamic>[];
       final Map<String, Map<String, dynamic>> byMutation =
           <String, Map<String, dynamic>>{
-        for (final dynamic r in results)
-          (r as Map<String, dynamic>)['mutation_id'] as String: r,
-      };
+            for (final dynamic r in results)
+              (r as Map<String, dynamic>)['mutation_id'] as String: r,
+          };
 
       for (final OutboxOp op in batch) {
         final Map<String, dynamic>? result = byMutation[op.mutationId];
@@ -103,18 +108,21 @@ class PushService {
         case 'rejected':
           await _recordConflict(op, result);
           await _outbox.markConflict(
-              op.seq, (result['reason'] ?? 'rejected') as String);
+            op.seq,
+            (result['reason'] ?? 'rejected') as String,
+          );
         default:
           await _outbox.markFailed(op, 'unknown status: $status');
       }
     });
   }
 
-  Future<void> _upsertServerRow(
-      String entity, Map<String, dynamic> row) async {
+  Future<void> _upsertServerRow(String entity, Map<String, dynamic> row) async {
     switch (entity) {
       case 'doctors':
-        await _db.into(_db.doctors).insertOnConflictUpdate(doctorCompanion(row));
+        await _db
+            .into(_db.doctors)
+            .insertOnConflictUpdate(doctorCompanion(row));
       case 'chemists':
         await _db
             .into(_db.chemists)
@@ -132,7 +140,10 @@ class PushService {
 
   /// Replace the local (losing) record with the surviving server row and
   /// re-parent any local children/queued ops that referenced the loser.
-  Future<void> _adoptSurvivor(OutboxOp op, Map<String, dynamic> survivor) async {
+  Future<void> _adoptSurvivor(
+    OutboxOp op,
+    Map<String, dynamic> survivor,
+  ) async {
     final String loserId = op.entityId;
     final String survivorId = survivor['id'] as String;
 
@@ -145,43 +156,53 @@ class PushService {
       case 'dcr':
         await (_db.delete(_db.dcrs)..where((t) => t.id.equals(loserId))).go();
       case 'daily_plan':
-        await (_db.delete(_db.dailyPlans)..where((t) => t.id.equals(loserId)))
-            .go();
+        await (_db.delete(
+          _db.dailyPlans,
+        )..where((t) => t.id.equals(loserId))).go();
         // Local DCRs that pointed at the losing plan move to the survivor.
         await (_db.update(_db.dcrs)..where((t) => t.planId.equals(loserId)))
             .write(DcrsCompanion(planId: Value(survivorId)));
         // Queued ops carrying the losing plan id are rewritten in place.
-        final List<OutboxOp> queued = await (_db.select(_db.outboxOps)
-              ..where((t) => t.state.isIn(const ['pending', 'conflict'])))
-            .get();
+        final List<OutboxOp> queued = await (_db.select(
+          _db.outboxOps,
+        )..where((t) => t.state.isIn(const ['pending', 'conflict']))).get();
         for (final OutboxOp q in queued) {
           if (!q.payloadJson.contains(loserId)) continue;
-          await (_db.update(_db.outboxOps)..where((t) => t.seq.equals(q.seq)))
-              .write(OutboxOpsCompanion(
-            payloadJson: Value(q.payloadJson.replaceAll(loserId, survivorId)),
-          ));
+          await (_db.update(
+            _db.outboxOps,
+          )..where((t) => t.seq.equals(q.seq))).write(
+            OutboxOpsCompanion(
+              payloadJson: Value(q.payloadJson.replaceAll(loserId, survivorId)),
+            ),
+          );
         }
       case 'doctors':
-        await (_db.delete(_db.doctors)..where((t) => t.id.equals(loserId)))
-            .go();
+        await (_db.delete(
+          _db.doctors,
+        )..where((t) => t.id.equals(loserId))).go();
       case 'chemists':
-        await (_db.delete(_db.chemists)..where((t) => t.id.equals(loserId)))
-            .go();
+        await (_db.delete(
+          _db.chemists,
+        )..where((t) => t.id.equals(loserId))).go();
     }
   }
 
   Future<void> _recordConflict(OutboxOp op, Map<String, dynamic> result) async {
-    await _db.into(_db.syncConflicts).insertOnConflictUpdate(SyncConflict(
-          mutationId: op.mutationId,
-          entity: op.entity,
-          entityId: op.entityId,
-          reason: result['reason'] as String?,
-          clientPayloadJson: op.payloadJson,
-          serverRowJson: result['server_row'] == null
-              ? null
-              : jsonEncode(result['server_row']),
-          createdAt: DateTime.now().toUtc().toIso8601String(),
-          resolved: false,
-        ));
+    await _db
+        .into(_db.syncConflicts)
+        .insertOnConflictUpdate(
+          SyncConflict(
+            mutationId: op.mutationId,
+            entity: op.entity,
+            entityId: op.entityId,
+            reason: result['reason'] as String?,
+            clientPayloadJson: op.payloadJson,
+            serverRowJson: result['server_row'] == null
+                ? null
+                : jsonEncode(result['server_row']),
+            createdAt: DateTime.now().toUtc().toIso8601String(),
+            resolved: false,
+          ),
+        );
   }
 }

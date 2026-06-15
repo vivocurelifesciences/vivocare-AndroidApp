@@ -22,12 +22,14 @@ class OutboxService {
     required Map<String, dynamic> payload,
     String? baseServerUdt,
   }) async {
-    final OutboxOp? pending = await (_db.select(_db.outboxOps)
-          ..where((t) =>
-              t.entity.equals(entity) &
-              t.entityId.equals(entityId) &
-              t.state.isIn(const ['pending', 'conflict'])))
-        .getSingleOrNull();
+    final OutboxOp? pending =
+        await (_db.select(_db.outboxOps)..where(
+              (t) =>
+                  t.entity.equals(entity) &
+                  t.entityId.equals(entityId) &
+                  t.state.isIn(const ['pending', 'conflict']),
+            ))
+            .getSingleOrNull();
 
     final String now = DateTime.now().toUtc().toIso8601String();
 
@@ -36,34 +38,40 @@ class OutboxService {
       if (op == 'delete') {
         if (pending.op == 'create') {
           // Created offline then deleted offline: nothing to tell the server.
-          await (_db.delete(_db.outboxOps)
-                ..where((t) => t.seq.equals(pending.seq)))
-              .go();
+          await (_db.delete(
+            _db.outboxOps,
+          )..where((t) => t.seq.equals(pending.seq))).go();
           return;
         }
         mergedOp = 'delete';
       }
-      await (_db.update(_db.outboxOps)
-            ..where((t) => t.seq.equals(pending.seq)))
-          .write(OutboxOpsCompanion(
-        op: Value(mergedOp),
-        payloadJson: Value(jsonEncode(payload)),
-        clientChangedAt: Value(now),
-        state: const Value('pending'),
-        lastError: const Value(null),
-      ));
+      await (_db.update(
+        _db.outboxOps,
+      )..where((t) => t.seq.equals(pending.seq))).write(
+        OutboxOpsCompanion(
+          op: Value(mergedOp),
+          payloadJson: Value(jsonEncode(payload)),
+          clientChangedAt: Value(now),
+          state: const Value('pending'),
+          lastError: const Value(null),
+        ),
+      );
       return;
     }
 
-    await _db.into(_db.outboxOps).insert(OutboxOpsCompanion.insert(
-          mutationId: const Uuid().v7(),
-          entity: entity,
-          entityId: entityId,
-          op: op,
-          payloadJson: jsonEncode(payload),
-          baseServerUdt: Value(baseServerUdt),
-          clientChangedAt: now,
-        ));
+    await _db
+        .into(_db.outboxOps)
+        .insert(
+          OutboxOpsCompanion.insert(
+            mutationId: const Uuid().v7(),
+            entity: entity,
+            entityId: entityId,
+            op: op,
+            payloadJson: jsonEncode(payload),
+            baseServerUdt: Value(baseServerUdt),
+            clientChangedAt: now,
+          ),
+        );
   }
 
   /// Next batch to push, strictly in enqueue order (parents precede children
@@ -85,8 +93,7 @@ class OutboxService {
   /// Reverts stale inflight ops (e.g. app killed mid-push) back to pending.
   /// Safe because the server push log makes re-sends idempotent.
   Future<void> recoverInflight() async {
-    await (_db.update(_db.outboxOps)
-          ..where((t) => t.state.equals('inflight')))
+    await (_db.update(_db.outboxOps)..where((t) => t.state.equals('inflight')))
         .write(const OutboxOpsCompanion(state: Value('pending')));
   }
 
@@ -94,32 +101,35 @@ class OutboxService {
       (_db.delete(_db.outboxOps)..where((t) => t.seq.equals(seq))).go();
 
   Future<void> markConflict(int seq, String reason) =>
-      (_db.update(_db.outboxOps)..where((t) => t.seq.equals(seq)))
-          .write(OutboxOpsCompanion(
-        state: const Value('conflict'),
-        lastError: Value(reason),
-      ));
+      (_db.update(_db.outboxOps)..where((t) => t.seq.equals(seq))).write(
+        OutboxOpsCompanion(
+          state: const Value('conflict'),
+          lastError: Value(reason),
+        ),
+      );
 
   Future<void> markFailed(OutboxOp op, String error) async {
     final int attempts = op.attempts + 1;
     // After repeated failures park the op so it can't block the queue forever.
     final bool park = attempts >= 5;
-    await (_db.update(_db.outboxOps)..where((t) => t.seq.equals(op.seq)))
-        .write(OutboxOpsCompanion(
-      attempts: Value(attempts),
-      lastError: Value(error),
-      state: Value(park ? 'conflict' : 'pending'),
-    ));
+    await (_db.update(_db.outboxOps)..where((t) => t.seq.equals(op.seq))).write(
+      OutboxOpsCompanion(
+        attempts: Value(attempts),
+        lastError: Value(error),
+        state: Value(park ? 'conflict' : 'pending'),
+      ),
+    );
   }
 
   /// Re-queue a parked op after the user edits/acknowledges it.
   Future<void> requeue(int seq) =>
-      (_db.update(_db.outboxOps)..where((t) => t.seq.equals(seq)))
-          .write(const OutboxOpsCompanion(
-        state: Value('pending'),
-        attempts: Value(0),
-        lastError: Value(null),
-      ));
+      (_db.update(_db.outboxOps)..where((t) => t.seq.equals(seq))).write(
+        const OutboxOpsCompanion(
+          state: Value('pending'),
+          attempts: Value(0),
+          lastError: Value(null),
+        ),
+      );
 
   Future<void> discard(int seq) => markDone(seq);
 
@@ -132,8 +142,9 @@ class OutboxService {
         .watchSingle();
   }
 
-  Stream<List<OutboxOp>> watchParked() => (_db.select(_db.outboxOps)
-        ..where((t) => t.state.equals('conflict'))
-        ..orderBy([(t) => OrderingTerm.asc(t.seq)]))
-      .watch();
+  Stream<List<OutboxOp>> watchParked() =>
+      (_db.select(_db.outboxOps)
+            ..where((t) => t.state.equals('conflict'))
+            ..orderBy([(t) => OrderingTerm.asc(t.seq)]))
+          .watch();
 }

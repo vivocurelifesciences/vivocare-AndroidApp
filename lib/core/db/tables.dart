@@ -208,6 +208,22 @@ class SyncConflicts extends Table {
   Set<Column> get primaryKey => {mutationId};
 }
 
+/// Permanent per-customer presentation history: one row per visit on which
+/// products were shown. Written when a DCR is created on this device and
+/// backfilled from pulled DCRs, but — unlike the DCR mirror — never pruned,
+/// so "what has this doctor already seen" survives any history window.
+class PresentationRecords extends Table {
+  /// The originating DCR id (stable across devices).
+  TextColumn get id => text()();
+  TextColumn get customerType => text()(); // doctor | chemist
+  TextColumn get customerId => text()();
+  TextColumn get shownAt => text()(); // ISO-8601 visit datetime
+  TextColumn get productIdsJson => text()(); // JSON array of product ids
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Small key-value store: device_id, bootstrap_done, last_sync_at, …
 class KvEntries extends Table {
   TextColumn get key => text()();

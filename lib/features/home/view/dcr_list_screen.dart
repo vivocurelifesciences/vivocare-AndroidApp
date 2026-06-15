@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vivocure/core/network/network_exception.dart';
@@ -535,14 +537,29 @@ class _PlanDcrCreationSheet extends StatefulWidget {
 }
 
 class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
-  final Set<String> _selectedMedicineIds = <String>{};
+  /// Ordered: the rep's presentation sequence is preserved end-to-end.
+  final List<String> _selectedMedicineIds = <String>[];
   late final TextEditingController _supportValueController;
   late final TextEditingController _expectedSupportValueController;
   bool _isCreatingDcr = false;
   String? _errorMessage;
+  CustomerPresentationHistory? _history;
+  bool _historyExpanded = false;
+  bool _prefilledFromPresentation = false;
 
   List<MedicinePresentation> get _selectedMedicines {
-    return widget.viewModel.getMedicinePresentationsByIds(_selectedMedicineIds);
+    final Map<String, MedicinePresentation> byId =
+        <String, MedicinePresentation>{
+          for (final MedicinePresentation m
+              in widget.viewModel.getMedicinePresentationsByIds(
+                _selectedMedicineIds,
+              ))
+            m.id: m,
+        };
+    return _selectedMedicineIds
+        .map((String id) => byId[id])
+        .whereType<MedicinePresentation>()
+        .toList(growable: false);
   }
 
   bool get _canSubmit {
@@ -560,6 +577,35 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
     _expectedSupportValueController = TextEditingController(
       text: _initialNumericValue(customer.expectedSupportValue),
     );
+    _loadPresentationSelection();
+  }
+
+  Future<void> _loadPresentationSelection() async {
+    // Pre-fill with exactly what was shown in View Presentation for this
+    // visit (recorded per plan) — not the whole history, and never every
+    // product. Validate against the known product list so stale ids drop out.
+    final List<String> presented = await widget.viewModel
+        .loadPresentedSelection(widget.entry.id);
+    final List<MedicinePresentation> presentedMedicines = widget.viewModel
+        .getMedicinePresentationsByIds(presented);
+    final Map<String, MedicinePresentation> presentedById =
+        <String, MedicinePresentation>{
+          for (final MedicinePresentation m in presentedMedicines) m.id: m,
+        };
+
+    final CustomerPresentationHistory? history = await widget.viewModel
+        .fetchPresentationHistory(widget.entry);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _history = history;
+      if (_selectedMedicineIds.isEmpty && presented.isNotEmpty) {
+        // Preserve the presented order.
+        _selectedMedicineIds.addAll(presented.where(presentedById.containsKey));
+        _prefilledFromPresentation = _selectedMedicineIds.isNotEmpty;
+      }
+    });
   }
 
   @override
@@ -574,7 +620,7 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
       context: context,
       builder: (_) => _MedicineSelectionDialog(
         products: widget.viewModel.medicinePresentations,
-        initialSelectedIds: _selectedMedicineIds,
+        initialSelectedIds: _selectedMedicineIds.toSet(),
       ),
     );
 
@@ -583,9 +629,36 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
     }
 
     setState(() {
-      _selectedMedicineIds
-        ..clear()
-        ..addAll(selectedIds);
+      // Keep the rep's existing order; append newly picked products after.
+      _selectedMedicineIds.removeWhere(
+        (String id) => !selectedIds.contains(id),
+      );
+      for (final MedicinePresentation m
+          in widget.viewModel.medicinePresentations) {
+        if (selectedIds.contains(m.id) &&
+            !_selectedMedicineIds.contains(m.id)) {
+          _selectedMedicineIds.add(m.id);
+        }
+      }
+    });
+  }
+
+  void _shuffleSelected() {
+    if (_selectedMedicineIds.length < 2) {
+      return;
+    }
+    setState(() {
+      _selectedMedicineIds.shuffle(math.Random());
+    });
+  }
+
+  void _onReorderSelected(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final String moved = _selectedMedicineIds.removeAt(oldIndex);
+      _selectedMedicineIds.insert(newIndex, moved);
     });
   }
 
@@ -720,6 +793,31 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
                         ),
                       ],
                     ),
+                    if (_history != null) ...[
+                      const SizedBox(height: 14),
+                      _PresentationHistoryCard(
+                        history: _history!,
+                        formatDate: widget.viewModel.formatShortDate,
+                        expanded: _historyExpanded,
+                        autoLoaded: false,
+                        onToggleExpanded: () {
+                          setState(() {
+                            _historyExpanded = !_historyExpanded;
+                          });
+                        },
+                        onSelectAll: () {
+                          setState(() {
+                            _selectedMedicineIds
+                              ..clear()
+                              ..addAll(
+                                _history!.allShownMedicines.map(
+                                  (MedicinePresentation m) => m.id,
+                                ),
+                              );
+                          });
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Row(
                       children: [
@@ -761,13 +859,20 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
                         children: [
                           Expanded(
                             child: Text(
-                              'Selected Products (${_selectedMedicines.length})',
+                              'Presentation (${_selectedMedicines.length})',
                               style: Theme.of(context).textTheme.titleSmall
                                   ?.copyWith(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
                                   ),
                             ),
+                          ),
+                          IconButton(
+                            tooltip: 'Shuffle order',
+                            onPressed: _selectedMedicines.length < 2
+                                ? null
+                                : _shuffleSelected,
+                            icon: const Icon(Icons.shuffle_rounded, size: 20),
                           ),
                           OutlinedButton.icon(
                             onPressed: _openMedicineSelector,
@@ -780,32 +885,57 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
                         ],
                       ),
                       const SizedBox(height: 10),
+                      if (_prefilledFromPresentation)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'Pre-filled with the products you showed in View '
+                            'Presentation. Adjust if needed.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(fontStyle: FontStyle.italic),
+                          ),
+                        ),
                       if (_selectedMedicines.isEmpty)
                         const _EmptySectionCard(
                           message:
                               'Products are optional. Select medicines only if you want to attach them to this DCR.',
                         )
-                      else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _selectedMedicines
-                              .map(
-                                (MedicinePresentation item) => Chip(
-                                  label: Text(
-                                    item.code.isEmpty
-                                        ? item.name
-                                        : '${item.name} (${item.code})',
-                                  ),
-                                  onDeleted: () {
-                                    setState(() {
-                                      _selectedMedicineIds.remove(item.id);
-                                    });
-                                  },
-                                ),
-                              )
-                              .toList(growable: false),
+                      else ...[
+                        Text(
+                          'Drag to set the order you will present in.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
+                        const SizedBox(height: 8),
+                        ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          buildDefaultDragHandles: false,
+                          itemCount: _selectedMedicines.length,
+                          onReorder: _onReorderSelected,
+                          proxyDecorator:
+                              (Widget child, int index, Animation<double> a) =>
+                                  Material(
+                                    color: Colors.transparent,
+                                    elevation: 4,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: child,
+                                  ),
+                          itemBuilder: (BuildContext context, int index) {
+                            final MedicinePresentation item =
+                                _selectedMedicines[index];
+                            return _SelectedMedicineTile(
+                              key: ValueKey<String>(item.id),
+                              index: index,
+                              medicine: item,
+                              onRemove: () {
+                                setState(() {
+                                  _selectedMedicineIds.remove(item.id);
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -1358,4 +1488,236 @@ class _DateInfoChip extends StatelessWidget {
 String _displayValue(String value) {
   final String trimmed = value.trim();
   return trimmed.isEmpty ? '-' : trimmed;
+}
+
+/// "Previously shown to this customer" — the permanent presentation history.
+/// Collapsed: union of products with a recency note. Expanded: visit-by-visit
+/// log, most recent first.
+class _PresentationHistoryCard extends StatelessWidget {
+  const _PresentationHistoryCard({
+    required this.history,
+    required this.formatDate,
+    required this.expanded,
+    required this.autoLoaded,
+    required this.onToggleExpanded,
+    required this.onSelectAll,
+  });
+
+  final CustomerPresentationHistory history;
+  final String Function(DateTime) formatDate;
+  final bool expanded;
+  final bool autoLoaded;
+  final VoidCallback onToggleExpanded;
+  final VoidCallback onSelectAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final DateTime? lastDate = history.visits.first.visitDate;
+    final String subtitle =
+        '${history.allShownMedicines.length} product'
+        '${history.allShownMedicines.length == 1 ? '' : 's'} across '
+        '${history.visits.length} visit'
+        '${history.visits.length == 1 ? '' : 's'}'
+        '${lastDate == null ? '' : ' · last on ${formatDate(lastDate)}'}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primaryBlue.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.history, size: 18, color: AppColors.primaryBlue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Previously shown',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                    Text(subtitle, style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: onSelectAll,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('Select all'),
+              ),
+              IconButton(
+                tooltip: expanded ? 'Hide history' : 'View history',
+                visualDensity: VisualDensity.compact,
+                onPressed: onToggleExpanded,
+                icon: Icon(
+                  expanded ? Icons.expand_less : Icons.expand_more,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+            ],
+          ),
+          if (autoLoaded) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Loaded into your presentation automatically — deselect '
+              'anything you will skip this visit.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          if (!expanded)
+            _medicineChips(theme, history.allShownMedicines)
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: history.visits
+                  .map(
+                    (PresentationHistoryVisit visit) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            visit.visitDate == null
+                                ? 'Earlier visit'
+                                : formatDate(visit.visitDate!),
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: AppColors.primaryBlueDark,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _medicineChips(theme, visit.medicines),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _medicineChips(ThemeData theme, List<MedicinePresentation> items) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: items
+          .map(
+            (MedicinePresentation medicine) => Chip(
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              backgroundColor: Colors.white,
+              side: BorderSide(
+                color: AppColors.primaryBlue.withValues(alpha: 0.3),
+              ),
+              label: Text(
+                medicine.name,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+/// One row of the in-sheet presentation order: position, name, drag handle.
+class _SelectedMedicineTile extends StatelessWidget {
+  const _SelectedMedicineTile({
+    super.key,
+    required this.index,
+    required this.medicine,
+    required this.onRemove,
+  });
+
+  final int index;
+  final MedicinePresentation medicine;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.primaryBlue.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '${index + 1}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.primaryBlue,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                medicine.code.isEmpty
+                    ? medicine.name
+                    : '${medicine.name} (${medicine.code})',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove',
+              visualDensity: VisualDensity.compact,
+              onPressed: onRemove,
+              icon: const Icon(Icons.close, size: 18),
+            ),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Icon(
+                  Icons.drag_handle,
+                  size: 20,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

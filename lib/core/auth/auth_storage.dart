@@ -24,6 +24,13 @@ class AuthStorage {
   static const String _tokenTypeKey = 'auth_token_type';
   static const String _verifierKey = 'offline_login_verifier';
   static const String _userProfileKey = 'auth_user_profile';
+  static const String _lastLoginAtKey = 'auth_last_login_at';
+  static const String _lastActivityAtKey = 'auth_last_activity_at';
+
+  /// Sessions silently expire after this much inactivity (measured from the
+  /// later of last login / last app activity). The rep then has to sign in
+  /// again — online or via the offline verifier.
+  static const Duration sessionLifetime = Duration(days: 15);
 
   // Legacy SharedPreferences keys (migrated then wiped).
   static const List<String> _legacyKeys = <String>[
@@ -100,6 +107,40 @@ class AuthStorage {
     await clearSession();
     await _storage.delete(key: _verifierKey);
     await _storage.delete(key: _userProfileKey);
+    await _storage.delete(key: _lastLoginAtKey);
+    await _storage.delete(key: _lastActivityAtKey);
+  }
+
+  // -------------------------------------------------------- session lifetime
+
+  /// Records a successful sign-in (online or offline-verified). Resets the
+  /// 15-day expiry window.
+  static Future<void> markLogin() async {
+    final String now = DateTime.now().toUtc().toIso8601String();
+    await _storage.write(key: _lastLoginAtKey, value: now);
+    await _storage.write(key: _lastActivityAtKey, value: now);
+  }
+
+  /// Slides the inactivity window forward; call on app open/resume.
+  static Future<void> touchActivity() => _storage.write(
+    key: _lastActivityAtKey,
+    value: DateTime.now().toUtc().toIso8601String(),
+  );
+
+  /// True when the rep has been inactive longer than [sessionLifetime].
+  /// Pre-existing sessions without a recorded timestamp are grandfathered in:
+  /// the window starts counting from this first check.
+  static Future<bool> isSessionExpired() async {
+    final String? activity = await _storage.read(key: _lastActivityAtKey);
+    final String? login = await _storage.read(key: _lastLoginAtKey);
+    final DateTime? reference =
+        DateTime.tryParse(activity ?? '') ?? DateTime.tryParse(login ?? '');
+    if (reference == null) {
+      await markLogin();
+      return false;
+    }
+    return DateTime.now().toUtc().difference(reference.toUtc()) >
+        sessionLifetime;
   }
 
   // ------------------------------------------------------------ user profile
@@ -164,8 +205,13 @@ class AuthStorage {
   /// PBKDF2-HMAC-SHA256, single block (32-byte output).
   static String _pbkdf2(String password, String salt) {
     final Hmac hmac = Hmac(sha256, utf8.encode(password));
-    List<int> block = hmac
-        .convert(<int>[...utf8.encode(salt), 0, 0, 0, 1]).bytes;
+    List<int> block = hmac.convert(<int>[
+      ...utf8.encode(salt),
+      0,
+      0,
+      0,
+      1,
+    ]).bytes;
     List<int> result = List<int>.from(block);
     for (int i = 1; i < _pbkdf2Rounds; i++) {
       block = hmac.convert(block).bytes;

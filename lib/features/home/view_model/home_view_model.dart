@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/db/app_database.dart' as db;
 import 'package:vivocure/core/navigation/home_user_context.dart';
+import 'package:vivocure/core/presentation/presentation_history_service.dart';
 import 'package:vivocure/data/repositories/plan_repository.dart';
 import 'package:vivocure/features/home/model/home_menu_item.dart';
 
@@ -216,22 +219,25 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Computed entirely from the local database (mirrors the old
-      // /upcoming-events server logic): birthdays/anniversaries in the next
-      // 15 days across the rep's doctors and chemist contact persons.
-      final List<UpcomingEvent> events = <UpcomingEvent>[];
+      // Computed entirely from the local database: birthdays/anniversaries
+      // within ±7 days of today across the rep's doctors and chemist contact
+      // persons. Each entry carries its real occurrence date so the list can
+      // be ordered chronologically (recent past first, upcoming last).
+      final List<({DateTime when, UpcomingEvent event})> dated =
+          <({DateTime when, UpcomingEvent event})>[];
       final DateTime today = _toDateOnly(DateTime.now());
 
-      final List<db.Doctor> doctors =
-          await AppServices.doctors.searchDoctors(limit: 2000);
+      final List<db.Doctor> doctors = await AppServices.doctors.searchDoctors(
+        limit: 2000,
+      );
       for (final db.Doctor doctor in doctors) {
         final String fullName = <String?>[
           doctor.firstName,
           doctor.middleName,
           doctor.lastName,
         ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim();
-        _appendEventIfUpcoming(
-          events,
+        _appendEventIfNear(
+          dated,
           today: today,
           rawDate: doctor.dob,
           eventName: 'Birthday',
@@ -239,8 +245,8 @@ class HomeViewModel extends ChangeNotifier {
           customerType: 'Doctor',
           customerLocation: doctor.area ?? '',
         );
-        _appendEventIfUpcoming(
-          events,
+        _appendEventIfNear(
+          dated,
           today: today,
           rawDate: doctor.dom,
           eventName: 'Anniversary',
@@ -250,11 +256,11 @@ class HomeViewModel extends ChangeNotifier {
         );
       }
 
-      final List<db.Chemist> chemists =
-          await AppServices.chemists.searchChemists(limit: 2000);
+      final List<db.Chemist> chemists = await AppServices.chemists
+          .searchChemists(limit: 2000);
       for (final db.Chemist chemist in chemists) {
-        _appendEventIfUpcoming(
-          events,
+        _appendEventIfNear(
+          dated,
           today: today,
           rawDate: chemist.contactPersonDob,
           eventName: 'Birthday',
@@ -262,8 +268,8 @@ class HomeViewModel extends ChangeNotifier {
           customerType: 'Chemist',
           customerLocation: chemist.area ?? '',
         );
-        _appendEventIfUpcoming(
-          events,
+        _appendEventIfNear(
+          dated,
           today: today,
           rawDate: chemist.contactPersonDom,
           eventName: 'Anniversary',
@@ -273,11 +279,10 @@ class HomeViewModel extends ChangeNotifier {
         );
       }
 
-      events.sort(
-        (UpcomingEvent a, UpcomingEvent b) =>
-            a.eventDate.compareTo(b.eventDate),
-      );
-      _upcomingEvents = events;
+      dated.sort((a, b) => a.when.compareTo(b.when));
+      _upcomingEvents = dated
+          .map((({DateTime when, UpcomingEvent event}) e) => e.event)
+          .toList(growable: false);
       _upcomingEventsSectionLabel = 'Birthdays & Anniversaries';
     } catch (_) {
       _upcomingEvents = <UpcomingEvent>[];
@@ -288,8 +293,12 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 
-  void _appendEventIfUpcoming(
-    List<UpcomingEvent> events, {
+  /// Window for birthdays/anniversaries on the home dashboard: this many days
+  /// before and after today (recurring annually).
+  static const int _eventWindowDays = 7;
+
+  void _appendEventIfNear(
+    List<({DateTime when, UpcomingEvent event})> events, {
     required DateTime today,
     required String? rawDate,
     required String eventName,
@@ -304,31 +313,69 @@ class HomeViewModel extends ChangeNotifier {
     if (parsed == null) {
       return;
     }
-    DateTime eventDate = DateTime(today.year, parsed.month, parsed.day);
-    if (eventDate.isBefore(today)) {
-      eventDate = DateTime(today.year + 1, parsed.month, parsed.day);
+
+    // The date recurs every year, so the relevant occurrence near "today"
+    // could fall in the previous, current, or next calendar year (handles the
+    // December/January wrap). Pick the one within the ±window.
+    DateTime? occurrence;
+    for (final int year in <int>[today.year - 1, today.year, today.year + 1]) {
+      final DateTime candidate = DateTime(year, parsed.month, parsed.day);
+      if (candidate.difference(today).inDays.abs() <= _eventWindowDays) {
+        occurrence = candidate;
+        break;
+      }
     }
-    if (eventDate.difference(today).inDays > 15) {
+    if (occurrence == null) {
       return;
     }
-    final String label = eventDate == today
-        ? 'Today'
-        : eventDate == today.add(const Duration(days: 1))
-            ? 'Tomorrow'
-            : '${eventDate.day} ${_fullMonthName(eventDate.month)}, ${eventDate.year}';
-    events.add(UpcomingEvent(
-      eventName: eventName,
-      eventDate: label,
-      customerName: customerName,
-      customerType: customerType,
-      customerLocation: customerLocation,
+
+    events.add((
+      when: occurrence,
+      event: UpcomingEvent(
+        eventName: eventName,
+        eventDate: _relativeDayLabel(today, occurrence),
+        customerName: customerName,
+        customerType: customerType,
+        customerLocation: customerLocation,
+      ),
     ));
+  }
+
+  /// Human label for an event date relative to today (within the ±7d window):
+  /// Today / Tomorrow / Yesterday / "in N days" / "N days ago".
+  String _relativeDayLabel(DateTime today, DateTime date) {
+    final int diff = date.difference(today).inDays;
+    if (diff == 0) {
+      return 'Today';
+    }
+    if (diff == 1) {
+      return 'Tomorrow';
+    }
+    if (diff == -1) {
+      return 'Yesterday';
+    }
+    final String dateText =
+        '${date.day} ${_fullMonthName(date.month)}, ${date.year}';
+    if (diff > 1) {
+      return '$dateText (in $diff days)';
+    }
+    return '$dateText (${diff.abs()} days ago)';
   }
 
   String _fullMonthName(int month) {
     const List<String> months = <String>[
-      'January', 'February', 'March', 'April', 'May', 'June', 'July',
-      'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return months[month - 1];
   }
@@ -357,20 +404,22 @@ class HomeViewModel extends ChangeNotifier {
 
   Future<void> loadCachedProducts() async {
     try {
-      final List<db.Product> products =
-          await AppServices.products.allProducts();
-      final List<MedicinePresentation> presentations =
-          <MedicinePresentation>[];
+      final List<db.Product> products = await AppServices.products
+          .allProducts();
+      final List<MedicinePresentation> presentations = <MedicinePresentation>[];
       for (final db.Product product in products) {
-        final String? localPath =
-            await AppServices.products.localImagePath(product.id);
-        presentations.add(MedicinePresentation(
-          id: product.id,
-          name: product.productName,
-          code: product.productCode ?? '',
-          imageUrl: product.primaryImageUrl ?? '',
-          localImagePath: localPath ?? '',
-        ));
+        final String? localPath = await AppServices.products.localImagePath(
+          product.id,
+        );
+        presentations.add(
+          MedicinePresentation(
+            id: product.id,
+            name: product.productName,
+            code: product.productCode ?? '',
+            imageUrl: product.primaryImageUrl ?? '',
+            localImagePath: localPath ?? '',
+          ),
+        );
       }
       _medicinePresentations = presentations;
       notifyListeners();
@@ -458,10 +507,10 @@ class HomeViewModel extends ChangeNotifier {
   Future<PlanDropdownData> fetchPlanDoctorChemistDropdown() async {
     await _refreshCustomerProfiles();
 
-    final List<db.Doctor> doctorRows =
-        await AppServices.doctors.dropdownOptions();
-    final List<db.Chemist> chemistRows =
-        await AppServices.chemists.dropdownOptions();
+    final List<db.Doctor> doctorRows = await AppServices.doctors
+        .dropdownOptions();
+    final List<db.Chemist> chemistRows = await AppServices.chemists
+        .dropdownOptions();
 
     List<PlanCustomerOption> doctors = doctorRows
         .map(_doctorOption)
@@ -495,17 +544,15 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   PlanCustomerOption _doctorOption(db.Doctor row) {
-    final String name = <String?>[row.firstName, row.middleName, row.lastName]
-        .whereType<String>()
-        .where((s) => s.isNotEmpty)
-        .join(' ')
-        .trim();
+    final String name = <String?>[
+      row.firstName,
+      row.middleName,
+      row.lastName,
+    ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim();
     return PlanCustomerOption(
       id: row.id,
       name: name,
-      code: (row.doctorCode == null || row.doctorCode!.isEmpty)
-          ? 'PENDING'
-          : row.doctorCode!,
+      code: row.doctorCode ?? '',
       customerType: 'doctor',
     );
   }
@@ -514,9 +561,7 @@ class HomeViewModel extends ChangeNotifier {
     return PlanCustomerOption(
       id: row.id,
       name: row.fullName,
-      code: (row.chemistCode == null || row.chemistCode!.isEmpty)
-          ? 'PENDING'
-          : row.chemistCode!,
+      code: row.chemistCode ?? '',
       customerType: 'chemist',
     );
   }
@@ -576,6 +621,8 @@ class HomeViewModel extends ChangeNotifier {
       productIds: cleanedProductIds,
     );
 
+    // The presented selection has served its purpose for this visit.
+    await clearPresentedSelection(trimmedPlanId);
     _recentlyCreatedDcrPlanIds.add(trimmedPlanId);
     await fetchPlanMeetEntries(visitDate: _currentPlanMeetDate);
     await fetchDcrEntries(
@@ -594,8 +641,9 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final List<db.DailyPlan> rows =
-          await AppServices.plans.plansForDate(targetDate);
+      final List<db.DailyPlan> rows = await AppServices.plans.plansForDate(
+        targetDate,
+      );
 
       // Resolve customer names/codes from the local doctors/chemists tables.
       final List<String> doctorIds = rows
@@ -611,8 +659,7 @@ class HomeViewModel extends ChangeNotifier {
           d.id: d,
       };
       final Map<String, db.Chemist> chemistsById = <String, db.Chemist>{
-        for (final db.Chemist c
-            in await AppServices.chemists.byIds(chemistIds))
+        for (final db.Chemist c in await AppServices.chemists.byIds(chemistIds))
           c.id: c,
       };
 
@@ -626,22 +673,23 @@ class HomeViewModel extends ChangeNotifier {
                 if (row.customerType == 'doctor') {
                   final db.Doctor? doctor = doctorsById[row.customerId];
                   if (doctor != null) {
-                    name = <String?>[
-                      doctor.firstName,
-                      doctor.middleName,
-                      doctor.lastName,
-                    ]
-                        .whereType<String>()
-                        .where((s) => s.isNotEmpty)
-                        .join(' ')
-                        .trim();
-                    code = doctor.doctorCode ?? 'PENDING';
+                    name =
+                        <String?>[
+                              doctor.firstName,
+                              doctor.middleName,
+                              doctor.lastName,
+                            ]
+                            .whereType<String>()
+                            .where((s) => s.isNotEmpty)
+                            .join(' ')
+                            .trim();
+                    code = doctor.doctorCode ?? '';
                   }
                 } else {
                   final db.Chemist? chemist = chemistsById[row.customerId];
                   if (chemist != null) {
                     name = chemist.fullName;
-                    code = chemist.chemistCode ?? 'PENDING';
+                    code = chemist.chemistCode ?? '';
                   }
                 }
                 return PlanMeetEntry(
@@ -651,7 +699,8 @@ class HomeViewModel extends ChangeNotifier {
                   type: row.customerType,
                   name: name,
                   visitDate: DateTime.tryParse(row.visitDate) ?? targetDate,
-                  createdAt: DateTime.tryParse(row.cdt ?? '') ??
+                  createdAt:
+                      DateTime.tryParse(row.cdt ?? '') ??
                       (DateTime.tryParse(row.visitDate) ?? targetDate),
                   visitStatus: row.visitStatus,
                 );
@@ -712,11 +761,10 @@ class HomeViewModel extends ChangeNotifier {
       final DateTime rangeStart = resolvedTodayOnly
           ? _toDateOnly(DateTime.now())
           : _toDateOnly(_dcrStartDate);
-      final DateTime rangeEnd = (resolvedTodayOnly
-              ? _toDateOnly(DateTime.now())
-              : _toDateOnly(_dcrEndDate))
-          .add(const Duration(days: 1))
-          .subtract(const Duration(seconds: 1));
+      // Inclusive by calendar date — the repository handles day bounds.
+      final DateTime rangeEnd = resolvedTodayOnly
+          ? _toDateOnly(DateTime.now())
+          : _toDateOnly(_dcrEndDate);
 
       final List<db.Dcr> rows = await AppServices.dcrs.dcrsBetween(
         start: rangeStart,
@@ -754,22 +802,24 @@ class HomeViewModel extends ChangeNotifier {
         customerType = plan.customerType;
         customerId = plan.customerId;
         if (plan.customerType == 'doctor') {
-          final db.Doctor? doctor =
-              await AppServices.doctors.getById(plan.customerId);
+          final db.Doctor? doctor = await AppServices.doctors.getById(
+            plan.customerId,
+          );
           if (doctor != null) {
             customerName = <String?>[
               doctor.firstName,
               doctor.middleName,
               doctor.lastName,
             ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim();
-            customerCode = doctor.doctorCode ?? 'PENDING';
+            customerCode = doctor.doctorCode ?? '';
           }
         } else if (plan.customerType == 'chemist') {
-          final db.Chemist? chemist =
-              await AppServices.chemists.getById(plan.customerId);
+          final db.Chemist? chemist = await AppServices.chemists.getById(
+            plan.customerId,
+          );
           if (chemist != null) {
             customerName = chemist.fullName;
-            customerCode = chemist.chemistCode ?? 'PENDING';
+            customerCode = chemist.chemistCode ?? '';
           }
         }
       }
@@ -780,15 +830,16 @@ class HomeViewModel extends ChangeNotifier {
         .map((String id) => id.trim())
         .where((String id) => id.isNotEmpty)
         .toList(growable: false);
-    final List<db.Product> products =
-        await AppServices.products.byIds(productIds);
+    final List<db.Product> products = await AppServices.products.byIds(
+      productIds,
+    );
 
     final DateTime visitDateTime =
         DateTime.tryParse(row.visitDatetime) ?? DateTime.now();
     final DateTime updatedAt =
         DateTime.tryParse(row.locallyChangedAt ?? '') ??
-            DateTime.tryParse(row.serverUdt ?? '') ??
-            visitDateTime;
+        DateTime.tryParse(row.serverUdt ?? '') ??
+        visitDateTime;
 
     return DcrEntry(
       id: row.id,
@@ -885,6 +936,120 @@ class HomeViewModel extends ChangeNotifier {
       contactPersonName: '-',
       contactPersonEmail: '-',
     );
+  }
+
+  // ------------------------------------------------- presented selection
+  // What the rep actually showed in View Presentation, keyed by plan, kept
+  // in the encrypted local DB so it survives restarts until the DCR is made.
+
+  static String _presentedSelectionKey(String planId) =>
+      'presented_selection_${planId.trim()}';
+
+  Future<void> recordPresentedSelection({
+    required String planId,
+    required List<String> productIds,
+  }) async {
+    if (planId.trim().isEmpty || productIds.isEmpty) {
+      return;
+    }
+    await AppServices.db.setKv(
+      _presentedSelectionKey(planId),
+      jsonEncode(productIds),
+    );
+  }
+
+  Future<List<String>> loadPresentedSelection(String planId) async {
+    if (planId.trim().isEmpty) {
+      return const <String>[];
+    }
+    final String? raw = await AppServices.db.getKv(
+      _presentedSelectionKey(planId),
+    );
+    if (raw == null || raw.isEmpty) {
+      return const <String>[];
+    }
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .map((dynamic id) => id.toString())
+          .toList(growable: false);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  Future<void> clearPresentedSelection(String planId) =>
+      AppServices.db.setKv(_presentedSelectionKey(planId), null);
+
+  /// Complete presentation history for this customer (most recent visit
+  /// first) plus the union of everything they have already seen. Reads the
+  /// permanent local history table, so it works fully offline and survives
+  /// app restarts. Returns null when nothing was ever presented.
+  Future<CustomerPresentationHistory?> fetchPresentationHistory(
+    PlanMeetEntry entry,
+  ) async {
+    try {
+      final List<PresentationVisit> visits = await AppServices.dcrs.history
+          .historyForCustomer(
+            customerType: entry.type.trim().toLowerCase(),
+            customerId: entry.customerId,
+          );
+      if (visits.isEmpty) {
+        return null;
+      }
+
+      final List<String> allIds = visits
+          .expand((PresentationVisit v) => v.productIds)
+          .toSet()
+          .toList(growable: false);
+      final List<db.Product> products = await AppServices.products.byIds(
+        allIds,
+      );
+      final Map<String, MedicinePresentation> byId =
+          <String, MedicinePresentation>{
+            for (final db.Product p in products)
+              p.id: MedicinePresentation(
+                id: p.id,
+                name: p.productName,
+                code: p.productCode ?? '',
+                imageUrl: p.primaryImageUrl ?? '',
+                localImagePath: '',
+              ),
+          };
+
+      final List<PresentationHistoryVisit> resolved = visits
+          .map(
+            (PresentationVisit v) => PresentationHistoryVisit(
+              visitDate: v.shownAt,
+              medicines: v.productIds
+                  .map((String id) => byId[id])
+                  .whereType<MedicinePresentation>()
+                  .toList(growable: false),
+            ),
+          )
+          .where((PresentationHistoryVisit v) => v.medicines.isNotEmpty)
+          .toList(growable: false);
+      if (resolved.isEmpty) {
+        return null;
+      }
+
+      // Union ordered by recency: most recently shown products first.
+      final List<MedicinePresentation> union = <MedicinePresentation>[];
+      final Set<String> seen = <String>{};
+      for (final PresentationVisit visit in visits) {
+        for (final String id in visit.productIds) {
+          final MedicinePresentation? medicine = byId[id];
+          if (medicine != null && seen.add(id)) {
+            union.add(medicine);
+          }
+        }
+      }
+      return CustomerPresentationHistory(
+        visits: resolved,
+        allShownMedicines: union,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   MedicinePresentation getMedicinePresentationByName(String name) {
@@ -989,22 +1154,21 @@ class HomeViewModel extends ChangeNotifier {
     ].join('|');
   }
 
-
-
   Future<void> _refreshCustomerProfiles() async {
     final Map<String, CustomerProfile> profilesById =
         <String, CustomerProfile>{};
 
-    for (final db.Doctor row
-        in await AppServices.doctors.searchDoctors(limit: 2000)) {
-      final String name = <String?>[row.firstName, row.middleName, row.lastName]
-          .whereType<String>()
-          .where((s) => s.isNotEmpty)
-          .join(' ')
-          .trim();
+    for (final db.Doctor row in await AppServices.doctors.searchDoctors(
+      limit: 2000,
+    )) {
+      final String name = <String?>[
+        row.firstName,
+        row.middleName,
+        row.lastName,
+      ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim();
       profilesById[row.id] = CustomerProfile(
         id: row.id,
-        code: row.doctorCode ?? 'PENDING',
+        code: row.doctorCode ?? '',
         type: 'doctor',
         name: name,
         qualification: row.qualification ?? '',
@@ -1021,11 +1185,12 @@ class HomeViewModel extends ChangeNotifier {
       );
     }
 
-    for (final db.Chemist row
-        in await AppServices.chemists.searchChemists(limit: 2000)) {
+    for (final db.Chemist row in await AppServices.chemists.searchChemists(
+      limit: 2000,
+    )) {
       profilesById[row.id] = CustomerProfile(
         id: row.id,
-        code: row.chemistCode ?? 'PENDING',
+        code: row.chemistCode ?? '',
         type: 'chemist',
         name: row.fullName,
         phone: row.phone ?? '',
@@ -1050,11 +1215,6 @@ class HomeViewModel extends ChangeNotifier {
       ..clear()
       ..addAll(profilesById);
   }
-
-
-
-
-
 }
 
 class UpcomingEvent {
@@ -1454,6 +1614,29 @@ class CustomerProfile {
       contactPersonEmail: _readStringValue(json['contact_person_email']),
     );
   }
+}
+
+/// One past visit in a customer's presentation history.
+class PresentationHistoryVisit {
+  const PresentationHistoryVisit({
+    required this.visitDate,
+    required this.medicines,
+  });
+
+  final DateTime? visitDate;
+  final List<MedicinePresentation> medicines;
+}
+
+/// Everything ever presented to a customer: visit-by-visit history plus the
+/// recency-ordered union used to pre-select products on the next visit.
+class CustomerPresentationHistory {
+  const CustomerPresentationHistory({
+    required this.visits,
+    required this.allShownMedicines,
+  });
+
+  final List<PresentationHistoryVisit> visits;
+  final List<MedicinePresentation> allShownMedicines;
 }
 
 class MedicinePresentation {

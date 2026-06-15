@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/db/app_database.dart';
+import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
+import 'package:vivocure/core/widgets/form_section.dart';
 import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
 
 enum _DoctorActionMode { add, edit }
@@ -438,9 +440,7 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
             (Chemist row) => _DoctorChemistOption(
               id: row.id,
               name: row.fullName,
-              code: (row.chemistCode == null || row.chemistCode!.isEmpty)
-                  ? 'PENDING'
-                  : row.chemistCode!,
+              code: row.chemistCode ?? '',
               area: row.area ?? '',
             ),
           )
@@ -682,23 +682,22 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
           .map((String id) => id.trim())
           .where((String id) => id.isNotEmpty)
           .toList(growable: false);
-      final List<Chemist> linked =
-          await AppServices.chemists.byIds(chemistIds);
+      final List<Chemist> linked = await AppServices.chemists.byIds(chemistIds);
       final List<_DoctorChemistOption> chemistOptions = linked
           .map(
             (Chemist item) => _DoctorChemistOption(
               id: item.id,
               name: item.fullName,
-              code: (item.chemistCode == null || item.chemistCode!.isEmpty)
-                  ? 'PENDING'
-                  : item.chemistCode!,
+              code: item.chemistCode ?? '',
               area: item.area ?? '',
             ),
           )
           .toList(growable: false);
 
-      final _DoctorRecord details =
-          _DoctorRecord.fromRow(row, chemists: chemistOptions);
+      final _DoctorRecord details = _DoctorRecord.fromRow(
+        row,
+        chemists: chemistOptions,
+      );
 
       if (!mounted) {
         return;
@@ -952,18 +951,18 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     return DecoratedBox(
       key: key,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE3EAF3)),
+        border: Border.all(color: AppColors.border),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x110F2744),
+            color: AppColors.shadow,
             blurRadius: 18,
             offset: Offset(0, 8),
           ),
         ],
       ),
-      child: Padding(padding: const EdgeInsets.all(16), child: child),
+      child: Padding(padding: const EdgeInsets.all(20), child: child),
     );
   }
 
@@ -1155,6 +1154,39 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
     );
   }
 
+  /// Dropdown with the shared field bottom spacing so it slots into
+  /// [FormFieldGrid] cells exactly like a text field.
+  Widget _dropdownField({
+    required String keyId,
+    required String label,
+    required String? value,
+    required List<String> options,
+    Map<String, String>? optionLabels,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey<String?>('$keyId-${value ?? ''}'),
+        initialValue: value,
+        isExpanded: true,
+        decoration: InputDecoration(labelText: label),
+        items: options
+            .map(
+              (String option) => DropdownMenuItem<String>(
+                value: option,
+                child: Text(
+                  optionLabels?[option] ?? option,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            )
+            .toList(growable: false),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   Widget _buildFormCard() {
     final bool isEditMode = _mode == _DoctorActionMode.edit;
     final bool showForm = !isEditMode || _selectedDoctor != null;
@@ -1171,35 +1203,20 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
           children: [
             Text(
               isEditMode ? 'Edit Doctor' : 'Add Doctor',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1D3557),
-              ),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(
               isEditMode
                   ? 'Choose a doctor from the list above, then update the fields below.'
-                  : 'Fill the doctor details and save them to the API.',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF6C7A89)),
+                  : 'Saved on this device instantly and synced to the server automatically.',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (isEditMode && _selectedDoctor != null) ...[
               const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF4F8FC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFD7E3F0)),
-                ),
-                child: Text(
-                  'Editing ${_selectedDoctor!.displayName}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1D3557),
-                  ),
-                ),
+              FormHintBanner(
+                icon: Icons.edit_outlined,
+                message: 'Editing ${_selectedDoctor!.displayName}',
               ),
             ],
             const SizedBox(height: 16),
@@ -1207,262 +1224,276 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF9FBFD),
+                  color: AppColors.cardTint,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFDCE6F0)),
+                  border: Border.all(color: AppColors.border),
                 ),
-                child: const Text(
+                child: Text(
                   'No doctor selected yet. Swipe left on a row above and tap Edit.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               )
             else ...[
-              _FormTextField(
-                controller: _firstNameController,
-                label: 'First Name *',
-                validator: (String? value) =>
-                    _validateRequired(value, fieldLabel: 'First name'),
+              const FormHintBanner(
+                message:
+                    'Only the doctor\'s name is required — every other field '
+                    'is optional and can be completed later.',
               ),
-              _FormTextField(
-                controller: _middleNameController,
-                label: 'Middle Name',
-              ),
-              _FormTextField(
-                controller: _lastNameController,
-                label: 'Last Name',
-              ),
-              DropdownButtonFormField<String>(
-                key: ValueKey<String?>(
-                  'doctor-qualification-${_selectedQualification ?? ''}',
-                ),
-                initialValue: _selectedQualification,
-                decoration: const InputDecoration(labelText: 'Qualification'),
-                items: _qualificationOptions
-                    .map(
-                      (String option) => DropdownMenuItem<String>(
-                        value: option,
-                        child: Text(option),
+              const SizedBox(height: 6),
+              FormSection(
+                icon: Icons.badge_outlined,
+                title: 'Identity',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _firstNameController,
+                        label: 'First Name *',
+                        validator: (String? value) =>
+                            _validateRequired(value, fieldLabel: 'First name'),
                       ),
-                    )
-                    .toList(growable: false),
-                onChanged: (String? value) {
-                  setState(() {
-                    _selectedQualification = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: ValueKey<String?>(
-                  'doctor-speciality-${_selectedSpeciality ?? ''}',
-                ),
-                initialValue: _selectedSpeciality,
-                decoration: const InputDecoration(labelText: 'Speciality'),
-                items: _specialityOptions
-                    .map(
-                      (String option) => DropdownMenuItem<String>(
-                        value: option,
-                        child: Text(option),
+                      _FormTextField(
+                        controller: _middleNameController,
+                        label: 'Middle Name',
                       ),
-                    )
-                    .toList(growable: false),
-                onChanged: (String? value) {
-                  setState(() {
-                    _selectedSpeciality = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: ValueKey<String?>(
-                  'doctor-category-${_selectedCategory ?? ''}',
-                ),
-                initialValue: _selectedCategory,
-                decoration: const InputDecoration(labelText: 'Favorite'),
-                items: _categoryOptions
-                    .map(
-                      (String category) => DropdownMenuItem<String>(
-                        value: category,
-                        child: Text(category),
+                      _FormTextField(
+                        controller: _lastNameController,
+                        label: 'Last Name',
                       ),
-                    )
-                    .toList(growable: false),
-                onChanged: (String? value) {
-                  setState(() {
-                    _selectedCategory = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: ValueKey<String?>(
-                  'doctor-type-${_selectedDoctorType ?? ''}',
-                ),
-                initialValue: _selectedDoctorType,
-                decoration: const InputDecoration(labelText: 'Doctor Type'),
-                items: _doctorTypeOptions
-                    .map(
-                      (String option) => DropdownMenuItem<String>(
-                        value: option,
-                        child: Text(_doctorTypeLabels[option] ?? option),
+                      _dropdownField(
+                        keyId: 'doctor-qualification',
+                        label: 'Qualification',
+                        value: _selectedQualification,
+                        options: _qualificationOptions,
+                        onChanged: (String? value) {
+                          setState(() {
+                            _selectedQualification = value;
+                          });
+                        },
                       ),
-                    )
-                    .toList(growable: false),
-                onChanged: (String? value) {
-                  setState(() {
-                    _selectedDoctorType = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Linked Chemists',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1D3557),
+                      _dropdownField(
+                        keyId: 'doctor-speciality',
+                        label: 'Speciality',
+                        value: _selectedSpeciality,
+                        options: _specialityOptions,
+                        onChanged: (String? value) {
+                          setState(() {
+                            _selectedSpeciality = value;
+                          });
+                        },
+                      ),
+                      _dropdownField(
+                        keyId: 'doctor-category',
+                        label: 'Favorite',
+                        value: _selectedCategory,
+                        options: _categoryOptions,
+                        onChanged: (String? value) {
+                          setState(() {
+                            _selectedCategory = value;
+                          });
+                        },
+                      ),
+                      _dropdownField(
+                        keyId: 'doctor-type',
+                        label: 'Doctor Type',
+                        value: _selectedDoctorType,
+                        options: _doctorTypeOptions,
+                        optionLabels: _doctorTypeLabels,
+                        onChanged: (String? value) {
+                          setState(() {
+                            _selectedDoctorType = value;
+                          });
+                        },
+                      ),
+                    ],
                   ),
-                ),
+                ],
+              ),
+              FormSection(
+                icon: Icons.local_pharmacy_outlined,
+                title: 'Linked Chemists',
+                subtitle: 'Optional — chemists this doctor works with',
+                children: <Widget>[
+                  SizedBox(
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: _isBusy || _isLoadingChemistOptions
+                          ? null
+                          : _openChemistSelector,
+                      icon: _isLoadingChemistOptions
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                              ),
+                            )
+                          : const Icon(Icons.local_pharmacy_outlined),
+                      label: Text(
+                        _selectedChemists.isEmpty
+                            ? 'Select Chemists'
+                            : 'Selected Chemists (${_selectedChemists.length})',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_selectedChemists.isNotEmpty)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _selectedChemists
+                          .map(
+                            (_DoctorChemistOption item) => InputChip(
+                              label: Text(item.displayLabel),
+                              onDeleted: _isBusy
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _selectedChemists = _selectedChemists
+                                            .where(
+                                              (_DoctorChemistOption chemist) =>
+                                                  chemist.id != item.id,
+                                            )
+                                            .toList(growable: false);
+                                      });
+                                    },
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  if (_selectedChemists.isNotEmpty) const SizedBox(height: 4),
+                ],
+              ),
+              FormSection(
+                icon: Icons.trending_up_rounded,
+                title: 'Engagement',
+                subtitle: 'Business values — all optional',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _potentialController,
+                        label: 'Potential',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'Potential',
+                            ),
+                      ),
+                      _FormTextField(
+                        controller: _supportValueController,
+                        label: 'Support Value',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'Support value',
+                            ),
+                      ),
+                      _FormTextField(
+                        controller: _expectedSupportValueController,
+                        label: 'Expected Support Value',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'Expected support value',
+                            ),
+                      ),
+                      _FormTextField(
+                        controller: _experienceYearsController,
+                        label: 'No. of years practicing',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'No. of years practicing',
+                            ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              FormSection(
+                icon: Icons.call_outlined,
+                title: 'Contact',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _phoneController,
+                        label: 'Phone',
+                        keyboardType: TextInputType.phone,
+                        validator: _validateOptionalPhone,
+                      ),
+                      _FormTextField(
+                        controller: _emailController,
+                        label: 'Email',
+                        keyboardType: TextInputType.emailAddress,
+                        validator: _validateEmail,
+                      ),
+                      _DateField(
+                        controller: _dobController,
+                        label: 'Date of Birth',
+                        onTap: () => _pickDate(_dobController),
+                        validator: (String? value) =>
+                            _validateDate(value, fieldLabel: 'DOB'),
+                      ),
+                      _DateField(
+                        controller: _domController,
+                        label: 'Date of Marriage',
+                        onTap: () => _pickDate(_domController),
+                        validator: (String? value) =>
+                            _validateDate(value, fieldLabel: 'DOM'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              FormSection(
+                icon: Icons.place_outlined,
+                title: 'Location',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _areaController,
+                        label: 'Area',
+                      ),
+                      _FormTextField(
+                        controller: _cityController,
+                        label: 'City',
+                      ),
+                      _FormTextField(
+                        controller: _stateController,
+                        label: 'State',
+                      ),
+                      _FormTextField(
+                        controller: _countryController,
+                        label: 'Country',
+                      ),
+                    ],
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               SizedBox(
-                height: 48,
-                child: OutlinedButton.icon(
-                  onPressed: _isBusy || _isLoadingChemistOptions
-                      ? null
-                      : _openChemistSelector,
-                  icon: _isLoadingChemistOptions
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const Icon(Icons.local_pharmacy_outlined),
-                  label: Text(
-                    _selectedChemists.isEmpty
-                        ? 'Select Chemists'
-                        : 'Selected Chemists (${_selectedChemists.length})',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_selectedChemists.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF9FBFD),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFDCE6F0)),
-                  ),
-                  child: const Text(
-                    'No chemists selected.',
-                    style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _selectedChemists
-                      .map(
-                        (_DoctorChemistOption item) => InputChip(
-                          label: Text(item.displayLabel),
-                          onDeleted: _isBusy
-                              ? null
-                              : () {
-                                  setState(() {
-                                    _selectedChemists = _selectedChemists
-                                        .where(
-                                          (_DoctorChemistOption chemist) =>
-                                              chemist.id != item.id,
-                                        )
-                                        .toList(growable: false);
-                                  });
-                                },
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-              const SizedBox(height: 12),
-              _FormTextField(
-                controller: _potentialController,
-                label: 'Potential',
-                keyboardType: TextInputType.number,
-                validator: (String? value) =>
-                    _validateNonNegativeInteger(value, fieldLabel: 'Potential'),
-              ),
-              _FormTextField(
-                controller: _supportValueController,
-                label: 'Support Value',
-                keyboardType: TextInputType.number,
-                validator: (String? value) => _validateNonNegativeInteger(
-                  value,
-                  fieldLabel: 'Support value',
-                ),
-              ),
-              _FormTextField(
-                controller: _expectedSupportValueController,
-                label: 'Expected Support Value',
-                keyboardType: TextInputType.number,
-                validator: (String? value) => _validateNonNegativeInteger(
-                  value,
-                  fieldLabel: 'Expected support value',
-                ),
-              ),
-              _FormTextField(
-                controller: _phoneController,
-                label: 'Phone',
-                keyboardType: TextInputType.phone,
-                validator: _validateOptionalPhone,
-              ),
-              _FormTextField(
-                controller: _emailController,
-                label: 'Email',
-                keyboardType: TextInputType.emailAddress,
-                validator: _validateEmail,
-              ),
-              _FormTextField(controller: _stateController, label: 'State'),
-              _FormTextField(controller: _cityController, label: 'City'),
-              _FormTextField(controller: _areaController, label: 'Area'),
-              _FormTextField(controller: _countryController, label: 'Country'),
-              _DateField(
-                controller: _dobController,
-                label: 'DOB (YYYY-MM-DD)',
-                onTap: () => _pickDate(_dobController),
-                validator: (String? value) =>
-                    _validateDate(value, fieldLabel: 'DOB'),
-              ),
-              _DateField(
-                controller: _domController,
-                label: 'DOM (YYYY-MM-DD)',
-                onTap: () => _pickDate(_domController),
-                validator: (String? value) =>
-                    _validateDate(value, fieldLabel: 'DOM'),
-              ),
-              _FormTextField(
-                controller: _experienceYearsController,
-                label: 'No. of years practicing',
-                keyboardType: TextInputType.number,
-                validator: (String? value) => _validateNonNegativeInteger(
-                  value,
-                  fieldLabel: 'No. of years practicing',
-                ),
-              ),
-              if (isEditMode) const SizedBox(height: 16),
-              SizedBox(
-                height: 48,
-                child: ElevatedButton(
+                height: 52,
+                child: FilledButton.icon(
                   onPressed: _isBusy ? null : _submit,
-                  child: _isSubmitting
+                  icon: _isSubmitting
                       ? const SizedBox(
                           height: 18,
                           width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: Colors.white,
+                          ),
                         )
-                      : Text(isEditMode ? 'Update Doctor' : 'Save Doctor'),
+                      : const Icon(Icons.save_outlined, size: 20),
+                  label: Text(isEditMode ? 'Update Doctor' : 'Save Doctor'),
                 ),
               ),
             ],
@@ -1678,9 +1709,7 @@ class _DoctorRecord {
   }) {
     return _DoctorRecord(
       id: row.id,
-      doctorCode: (row.doctorCode == null || row.doctorCode!.isEmpty)
-          ? 'PENDING'
-          : row.doctorCode!,
+      doctorCode: row.doctorCode ?? '',
       firstName: row.firstName ?? '',
       middleName: row.middleName ?? '',
       lastName: row.lastName ?? '',
@@ -1755,9 +1784,7 @@ class _DoctorRecord {
     }
     return '$fullName ($doctorCode)';
   }
-
 }
-
 
 class _DoctorChemistOption {
   const _DoctorChemistOption({
@@ -1782,11 +1809,4 @@ class _DoctorChemistOption {
     }
     return '$resolvedName • $area';
   }
-
 }
-
-
-
-
-
-

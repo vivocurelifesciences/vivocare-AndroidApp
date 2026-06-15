@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/db/app_database.dart';
+import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
+import 'package:vivocure/core/widgets/form_section.dart';
 import 'package:vivocure/features/auth/view/widgets/swipe_action_tile.dart';
 
 enum _ChemistActionMode { add, edit }
@@ -534,18 +536,18 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
     return DecoratedBox(
       key: key,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE3EAF3)),
+        border: Border.all(color: AppColors.border),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x110F2744),
+            color: AppColors.shadow,
             blurRadius: 18,
             offset: Offset(0, 8),
           ),
         ],
       ),
-      child: Padding(padding: const EdgeInsets.all(16), child: child),
+      child: Padding(padding: const EdgeInsets.all(20), child: child),
     );
   }
 
@@ -711,7 +713,7 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
                                 flex: 2,
                                 child: Text(
                                   chemist.chemistCode.isEmpty
-                                      ? 'PENDING'
+                                      ? '-'
                                       : chemist.chemistCode,
                                   style: const TextStyle(
                                     color: Color(0xFF52606D),
@@ -759,35 +761,20 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
           children: [
             Text(
               isEditMode ? 'Edit Chemist' : 'Add Chemist',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1D3557),
-              ),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(
               isEditMode
                   ? 'Choose a chemist from the list above, then update the fields below.'
-                  : 'Fill the chemist details and save them to the API.',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF6C7A89)),
+                  : 'Saved on this device instantly and synced to the server automatically.',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (isEditMode && _selectedChemist != null) ...[
               const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF4F8FC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFD7E3F0)),
-                ),
-                child: Text(
-                  'Editing ${_selectedChemist!.displayName}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1D3557),
-                  ),
-                ),
+              FormHintBanner(
+                icon: Icons.edit_outlined,
+                message: 'Editing ${_selectedChemist!.displayName}',
               ),
             ],
             const SizedBox(height: 16),
@@ -795,112 +782,186 @@ class _AddChemistScreenState extends State<AddChemistScreen> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF9FBFD),
+                  color: AppColors.cardTint,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFDCE6F0)),
+                  border: Border.all(color: AppColors.border),
                 ),
-                child: const Text(
+                child: Text(
                   'No chemist selected yet. Swipe left on a row above and tap Edit.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Color(0xFF6C7A89)),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               )
             else ...[
-              _FormTextField(
-                controller: _firstNameController,
-                label: 'First Name *',
-                validator: (String? value) =>
-                    _validateRequired(value, fieldLabel: 'First name'),
+              const FormHintBanner(
+                message:
+                    'Only the chemist\'s name is required — every other field '
+                    'is optional and can be completed later.',
               ),
-              _FormTextField(
-                controller: _lastNameController,
-                label: 'Last Name',
+              const SizedBox(height: 6),
+              FormSection(
+                icon: Icons.badge_outlined,
+                title: 'Identity',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _firstNameController,
+                        label: 'First Name *',
+                        validator: (String? value) =>
+                            _validateRequired(value, fieldLabel: 'First name'),
+                      ),
+                      _FormTextField(
+                        controller: _lastNameController,
+                        label: 'Last Name',
+                      ),
+                      _FormTextField(
+                        controller: _phoneController,
+                        label: 'Phone',
+                        keyboardType: TextInputType.phone,
+                        validator: _validateOptionalPhone,
+                      ),
+                      _FormTextField(
+                        controller: _emailController,
+                        label: 'Email',
+                        keyboardType: TextInputType.emailAddress,
+                        validator: _validateEmail,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              _FormTextField(
-                controller: _phoneController,
-                label: 'Phone',
-                keyboardType: TextInputType.phone,
-                validator: _validateOptionalPhone,
+              FormSection(
+                icon: Icons.person_outline,
+                title: 'Contact Person',
+                subtitle: 'Optional — who to reach at the store',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _contactPersonNameController,
+                        label: 'Contact Person Name',
+                      ),
+                      _FormTextField(
+                        controller: _contactPersonEmailController,
+                        label: 'Contact Person Email',
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      _DateField(
+                        controller: _contactPersonDobController,
+                        label: 'Contact Person DOB',
+                        onTap: () => _pickDate(_contactPersonDobController),
+                        validator: (String? value) => _validateDate(
+                          value,
+                          fieldLabel: 'Contact person DOB',
+                        ),
+                      ),
+                      _DateField(
+                        controller: _contactPersonDomController,
+                        label: 'Contact Person DOM',
+                        onTap: () => _pickDate(_contactPersonDomController),
+                        validator: (String? value) => _validateDate(
+                          value,
+                          fieldLabel: 'Contact person DOM',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              _FormTextField(
-                controller: _emailController,
-                label: 'Email',
-                keyboardType: TextInputType.emailAddress,
-                validator: _validateEmail,
+              FormSection(
+                icon: Icons.trending_up_rounded,
+                title: 'Engagement',
+                subtitle: 'Business values — all optional',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _potentialController,
+                        label: 'Potential',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'Potential',
+                            ),
+                      ),
+                      _FormTextField(
+                        controller: _supportValueController,
+                        label: 'Support Value',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'Support value',
+                            ),
+                      ),
+                      _FormTextField(
+                        controller: _expectedSupportValueController,
+                        label: 'Expected Support Value',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'Expected support value',
+                            ),
+                      ),
+                      _FormTextField(
+                        controller: _experienceYearsController,
+                        label: 'No. of years practicing',
+                        keyboardType: TextInputType.number,
+                        validator: (String? value) =>
+                            _validateNonNegativeInteger(
+                              value,
+                              fieldLabel: 'No. of years practicing',
+                            ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              _FormTextField(
-                controller: _contactPersonNameController,
-                label: 'Contact Person Name',
+              FormSection(
+                icon: Icons.place_outlined,
+                title: 'Location',
+                children: <Widget>[
+                  FormFieldGrid(
+                    children: <Widget>[
+                      _FormTextField(
+                        controller: _areaController,
+                        label: 'Area',
+                      ),
+                      _FormTextField(
+                        controller: _cityController,
+                        label: 'City',
+                      ),
+                      _FormTextField(
+                        controller: _stateController,
+                        label: 'State',
+                      ),
+                      _FormTextField(
+                        controller: _countryController,
+                        label: 'Country',
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              _FormTextField(
-                controller: _contactPersonEmailController,
-                label: 'Contact Person Email',
-                keyboardType: TextInputType.emailAddress,
-              ),
-              _DateField(
-                controller: _contactPersonDobController,
-                label: 'Contact Person DOB (YYYY-MM-DD)',
-                onTap: () => _pickDate(_contactPersonDobController),
-                validator: (String? value) =>
-                    _validateDate(value, fieldLabel: 'Contact person DOB'),
-              ),
-              _DateField(
-                controller: _contactPersonDomController,
-                label: 'Contact Person DOM (YYYY-MM-DD)',
-                onTap: () => _pickDate(_contactPersonDomController),
-                validator: (String? value) =>
-                    _validateDate(value, fieldLabel: 'Contact person DOM'),
-              ),
-              _FormTextField(
-                controller: _expectedSupportValueController,
-                label: 'Expected Support Value',
-                keyboardType: TextInputType.number,
-                validator: (String? value) => _validateNonNegativeInteger(
-                  value,
-                  fieldLabel: 'Expected support value',
-                ),
-              ),
-              _FormTextField(
-                controller: _potentialController,
-                label: 'Potential',
-                keyboardType: TextInputType.number,
-                validator: (String? value) =>
-                    _validateNonNegativeInteger(value, fieldLabel: 'Potential'),
-              ),
-              _FormTextField(
-                controller: _supportValueController,
-                label: 'Support Value',
-                keyboardType: TextInputType.number,
-                validator: (String? value) => _validateNonNegativeInteger(
-                  value,
-                  fieldLabel: 'Support value',
-                ),
-              ),
-              _FormTextField(
-                controller: _experienceYearsController,
-                label: 'No. of years practicing',
-                keyboardType: TextInputType.number,
-                validator: (String? value) => _validateNonNegativeInteger(
-                  value,
-                  fieldLabel: 'No. of years practicing',
-                ),
-              ),
-              _FormTextField(controller: _stateController, label: 'State'),
-              _FormTextField(controller: _cityController, label: 'City'),
-              _FormTextField(controller: _areaController, label: 'Area'),
-              _FormTextField(controller: _countryController, label: 'Country'),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               SizedBox(
-                height: 48,
-                child: ElevatedButton(
+                height: 52,
+                child: FilledButton.icon(
                   onPressed: _isBusy ? null : _submit,
-                  child: _isSubmitting
+                  icon: _isSubmitting
                       ? const SizedBox(
                           height: 18,
                           width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: Colors.white,
+                          ),
                         )
-                      : Text(isEditMode ? 'Update Chemist' : 'Save Chemist'),
+                      : const Icon(Icons.save_outlined, size: 20),
+                  label: Text(isEditMode ? 'Update Chemist' : 'Save Chemist'),
                 ),
               ),
             ],
@@ -1093,7 +1154,7 @@ class _ChemistRecord {
   factory _ChemistRecord.fromRow(Chemist row) {
     return _ChemistRecord(
       id: row.id,
-      chemistCode: row.chemistCode ?? 'PENDING',
+      chemistCode: row.chemistCode ?? '',
       fullName: row.fullName,
       phone: row.phone ?? '',
       email: row.email ?? '',
@@ -1147,8 +1208,4 @@ class _ChemistRecord {
     }
     return '${fullName.isEmpty ? 'Unnamed Chemist' : fullName} ($chemistCode)';
   }
-
 }
-
-
-
