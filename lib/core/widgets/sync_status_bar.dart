@@ -157,7 +157,7 @@ class SyncStatusBar extends StatelessWidget {
       }
     }
     if (sync.lastError != null) {
-      return 'Sync issue — will retry automatically';
+      return 'Sync issue — tap Sync to retry';
     }
     final DateTime? last = sync.lastSyncAt;
     if (last == null) {

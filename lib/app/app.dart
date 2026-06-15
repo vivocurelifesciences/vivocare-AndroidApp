@@ -8,7 +8,6 @@ import 'package:vivocure/app/router/app_router.dart';
 import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/auth/auth_storage.dart';
 import 'package:vivocure/core/connectivity/connectivity_service.dart';
-import 'package:vivocure/core/sync/background_sync.dart';
 import 'package:vivocure/core/sync/sync_engine.dart';
 import 'package:vivocure/core/theme/app_theme.dart';
 
@@ -36,12 +35,8 @@ class _VivocureAppState extends State<VivocureApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Slide the 15-day inactivity window forward on every active use.
+      // (Sync is manual-only — resuming never triggers a sync.)
       unawaited(AuthStorage.touchActivity());
-      unawaited(AppServices.syncEngine.syncNow(reason: 'resume'));
-    } else if (state == AppLifecycleState.paused &&
-        AppServices.syncEngine.state.pendingOps > 0) {
-      // Unsynced work and the user is leaving: ask WorkManager to deliver it.
-      unawaited(BackgroundSync.scheduleOneShot());
     }
   }
 

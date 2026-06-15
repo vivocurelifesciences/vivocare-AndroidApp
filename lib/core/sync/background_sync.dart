@@ -33,40 +33,16 @@ void backgroundSyncDispatcher() {
 }
 
 class BackgroundSync {
-  /// Registers the periodic job (Android). Safe to call on every startup —
-  /// existing registration is kept/replaced.
-  static Future<void> register() async {
+  /// Cancels any background sync work previously registered by older builds.
+  /// Sync is now manual-only, so no background job is registered; this just
+  /// tears down anything an existing install may still have scheduled.
+  static Future<void> cancelAll() async {
     try {
       await Workmanager().initialize(backgroundSyncDispatcher);
-      await Workmanager().registerPeriodicTask(
-        periodicSyncTask,
-        periodicSyncTask,
-        frequency: const Duration(minutes: 45),
-        constraints: Constraints(
-          networkType: NetworkType.connected,
-          requiresBatteryNotLow: true,
-        ),
-        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-        backoffPolicy: BackoffPolicy.exponential,
-      );
+      await Workmanager().cancelAll();
     } catch (error) {
-      // iOS or platforms without WorkManager support: foreground sync only.
-      debugPrint('[SYNC][BG] registration skipped: $error');
-    }
-  }
-
-  /// Expedited one-shot when the outbox is non-empty (e.g. user backgrounds
-  /// the app right after creating DCRs).
-  static Future<void> scheduleOneShot() async {
-    try {
-      await Workmanager().registerOneOffTask(
-        '$oneShotSyncTask-${DateTime.now().millisecondsSinceEpoch}',
-        oneShotSyncTask,
-        constraints: Constraints(networkType: NetworkType.connected),
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-      );
-    } catch (error) {
-      debugPrint('[SYNC][BG] one-shot skipped: $error');
+      // iOS or platforms without WorkManager support: nothing to cancel.
+      debugPrint('[SYNC][BG] cancel skipped: $error');
     }
   }
 }

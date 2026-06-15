@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:vivocure/core/app_services.dart';
 import 'package:vivocure/core/db/app_database.dart';
+import 'package:vivocure/core/layout/responsive.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
 import 'package:vivocure/core/widgets/app_page_backdrop.dart';
@@ -511,11 +512,15 @@ class _AddDoctorScreenState extends State<AddDoctorScreen> {
                     })
                     .toList(growable: false);
 
+            final Size dialogSize = context.dialogSize(
+              tabletWidth: 680,
+              tabletHeight: 560,
+            );
             return AlertDialog(
               title: const Text('Select Chemists'),
               content: SizedBox(
-                width: 680,
-                height: 560,
+                width: dialogSize.width,
+                height: dialogSize.height,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

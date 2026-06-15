@@ -48,8 +48,13 @@ class SyncState extends ChangeNotifier {
   }
 }
 
-/// Orchestrates push → pull → media, single-flight, with retry/backoff and
-/// automatic triggers (connectivity regained, post-mutation debounce).
+/// Orchestrates push → pull → media as a single-flight run.
+///
+/// Sync is **manual only**: it runs exclusively when [syncNow] is called from
+/// the Sync button (and the initial [bootstrap] right after login). There are
+/// no automatic triggers — no connectivity-regained sync, no post-mutation
+/// debounce, no background/periodic job, and no failure auto-retry. A failed
+/// run surfaces an error; the user retries with the Sync button.
 class SyncEngine {
   SyncEngine({
     required AppDatabase db,
@@ -63,11 +68,9 @@ class SyncEngine {
     _push = PushService(db, api, _outbox);
     _media = MediaCacheService(db);
 
+    // Keep the pending-count chip live; this only watches the local outbox and
+    // never triggers a sync.
     _pendingSub = _outbox.watchPendingCount().listen(state._setPending);
-    _onlineSub = _connectivity.onlineAgain.listen((_) {
-      debugPrint('[SYNC] Connectivity regained → sync');
-      unawaited(syncNow(reason: 'connectivity'));
-    });
     _restoreMeta();
   }
 
@@ -82,11 +85,7 @@ class SyncEngine {
   OutboxService get outbox => _outbox;
 
   Future<void>? _running;
-  Timer? _mutationDebounce;
-  int _consecutiveFailures = 0;
-  Timer? _backoffTimer;
   StreamSubscription<int>? _pendingSub;
-  StreamSubscription<void>? _onlineSub;
 
   Future<void> _restoreMeta() async {
     state._setBootstrapDone(await _db.getKv('bootstrap_done') == '1');
@@ -104,14 +103,6 @@ class SyncEngine {
       await _db.setKv('bootstrap_done', '1');
       state._setBootstrapDone(true);
     }
-  }
-
-  /// Debounced trigger after local writes — batches rapid edits into one run.
-  void scheduleAfterMutation() {
-    _mutationDebounce?.cancel();
-    _mutationDebounce = Timer(const Duration(seconds: 30), () {
-      unawaited(syncNow(reason: 'mutation'));
-    });
   }
 
   /// Single-flight sync run: push outbox, then pull all entities, then media.
@@ -152,32 +143,13 @@ class SyncEngine {
       final DateTime now = DateTime.now().toUtc();
       await _db.setKv('last_sync_at', now.toIso8601String());
       state._update(phase: SyncPhase.idle, syncedAt: now);
-      _consecutiveFailures = 0;
       debugPrint('[SYNC] Run done ($reason): pushed=$pushed');
     } catch (error) {
-      _consecutiveFailures++;
+      // Manual-only sync: surface the error and stop. No auto-retry — the user
+      // taps Sync again to retry.
       state._update(phase: SyncPhase.error, error: error.toString());
       debugPrint('[SYNC] Run failed ($reason): $error');
-      _scheduleBackoffRetry();
     }
-  }
-
-  /// Exponential backoff with cap: 30s, 2m, 10m, 30m, then hourly.
-  void _scheduleBackoffRetry() {
-    const List<Duration> steps = <Duration>[
-      Duration(seconds: 30),
-      Duration(minutes: 2),
-      Duration(minutes: 10),
-      Duration(minutes: 30),
-      Duration(hours: 1),
-    ];
-    final Duration delay =
-        steps[(_consecutiveFailures - 1).clamp(0, steps.length - 1)];
-    _backoffTimer?.cancel();
-    _backoffTimer = Timer(delay, () {
-      unawaited(syncNow(reason: 'retry'));
-    });
-    debugPrint('[SYNC] Retry scheduled in $delay');
   }
 
   /// Full resync: drop entity data + cursors (keeps auth, device id and
@@ -207,10 +179,7 @@ class SyncEngine {
   }
 
   void dispose() {
-    _mutationDebounce?.cancel();
-    _backoffTimer?.cancel();
     _pendingSub?.cancel();
-    _onlineSub?.cancel();
     state.dispose();
   }
 }

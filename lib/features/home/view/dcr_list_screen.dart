@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:vivocure/core/layout/responsive.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
@@ -16,6 +17,29 @@ class DcrListScreen extends StatefulWidget {
 
   @override
   State<DcrListScreen> createState() => _DcrListScreenState();
+}
+
+/// Opens the pre-filled "Make a DCR" bottom sheet for [entry] and returns the
+/// success message (or null if dismissed). Shared by the DCR list and the
+/// post-presentation quick-create flow so both reuse the same pre-population
+/// (presented products + customer support values) and one-DCR-per-plan rule.
+Future<String?> showDcrCreationSheet(
+  BuildContext context, {
+  required PlanMeetEntry entry,
+  required HomeViewModel viewModel,
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => FractionallySizedBox(
+      heightFactor: 0.9,
+      child: _PlanDcrCreationSheet(entry: entry, viewModel: viewModel),
+    ),
+  );
 }
 
 class _DcrListScreenState extends State<DcrListScreen> {
@@ -75,17 +99,10 @@ class _DcrListScreenState extends State<DcrListScreen> {
   }
 
   Future<void> _openCreateDcrSheet(PlanMeetEntry entry) async {
-    final String? message = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => FractionallySizedBox(
-        heightFactor: 0.9,
-        child: _PlanDcrCreationSheet(entry: entry, viewModel: widget.viewModel),
-      ),
+    final String? message = await showDcrCreationSheet(
+      context,
+      entry: entry,
+      viewModel: widget.viewModel,
     );
 
     if (!mounted || message == null) {
@@ -1062,11 +1079,12 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final Size size = context.dialogSize(tabletWidth: 540, tabletHeight: 520);
     return AlertDialog(
       contentPadding: const EdgeInsets.all(16),
       content: SizedBox(
-        width: 540,
-        height: 520,
+        width: size.width,
+        height: size.height,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

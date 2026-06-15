@@ -29,12 +29,28 @@ class MediaCacheService {
     return dir;
   }
 
-  /// Best-effort download of all pending media. Never throws — media must not
-  /// block data sync.
+  /// Media entry states:
+  ///  - pending     : not yet attempted
+  ///  - downloaded  : cached on disk, served offline
+  ///  - failed      : transient failure (timeout / 5xx / expired URL) — retried
+  ///  - missing     : object genuinely absent on the server (404/410) or the
+  ///                  URL is invalid — permanent, never retried (UI shows a
+  ///                  placeholder instead)
+  static const String _stateDownloaded = 'downloaded';
+  static const String _stateFailed = 'failed';
+  static const String _stateMissing = 'missing';
+
+  /// Best-effort download of all pending/retryable media. Never throws — media
+  /// must not block data sync. Permanently `missing` entries are skipped so a
+  /// 404'd asset isn't re-requested on every sync.
   Future<void> downloadPending({int maxConcurrent = 3}) async {
-    final List<MediaCacheEntry> pending = await (_db.select(
-      _db.mediaCacheEntries,
-    )..where((t) => t.state.isNotValue('downloaded'))).get();
+    final List<MediaCacheEntry> pending =
+        await (_db.select(_db.mediaCacheEntries)..where(
+              (t) =>
+                  t.state.isNotValue(_stateDownloaded) &
+                  t.state.isNotValue(_stateMissing),
+            ))
+            .get();
     if (pending.isEmpty) {
       return;
     }
@@ -49,36 +65,69 @@ class MediaCacheService {
     try {
       final String? url = await _resolveUrl(entry);
       if (url == null || url.isEmpty) {
+        // URL not available yet (owning entity not pulled): leave for a later
+        // sync to supply it. Not a failure.
         return;
       }
-      final http.Response response = await _http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 60));
-      if (response.statusCode != 200) {
-        throw HttpException('status ${response.statusCode}');
+      final Uri? uri = Uri.tryParse(url);
+      if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+        debugPrint('[MEDIA] invalid URL for ${entry.objectKey} — skipping');
+        await _setState(entry, _stateMissing);
+        return;
       }
-      final String fileName = entry.objectKey.replaceAll(
-        RegExp(r'[^\w.]+'),
-        '_',
+
+      final http.Response response = await _http
+          .get(uri)
+          .timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final String fileName = entry.objectKey.replaceAll(
+          RegExp(r'[^\w.]+'),
+          '_',
+        );
+        final File file = File(p.join(dir.path, fileName));
+        await file.writeAsBytes(response.bodyBytes, flush: true);
+        await _db
+            .into(_db.mediaCacheEntries)
+            .insertOnConflictUpdate(
+              entry.copyWith(
+                localPath: Value(file.path),
+                state: _stateDownloaded,
+                fetchedAt: Value(DateTime.now().toUtc().toIso8601String()),
+              ),
+            );
+        return;
+      }
+
+      // 404/410: the object isn't on the server. This won't fix itself, so
+      // mark it permanently missing and stop retrying — the UI falls back to a
+      // placeholder image.
+      if (response.statusCode == 404 || response.statusCode == 410) {
+        debugPrint(
+          '[MEDIA] asset missing (${response.statusCode}) '
+          '${entry.objectKey} — will show placeholder',
+        );
+        await _setState(entry, _stateMissing);
+        return;
+      }
+
+      // Everything else (403 expired presigned URL, 5xx, etc.) is transient:
+      // keep it retryable so the next sync (with a refreshed URL) can succeed.
+      debugPrint(
+        '[MEDIA] transient failure (${response.statusCode}) '
+        '${entry.objectKey} — will retry',
       );
-      final File file = File(p.join(dir.path, fileName));
-      await file.writeAsBytes(response.bodyBytes, flush: true);
-      await _db
-          .into(_db.mediaCacheEntries)
-          .insertOnConflictUpdate(
-            entry.copyWith(
-              localPath: Value(file.path),
-              state: 'downloaded',
-              fetchedAt: Value(DateTime.now().toUtc().toIso8601String()),
-            ),
-          );
+      await _setState(entry, _stateFailed);
     } catch (error) {
-      debugPrint('[MEDIA] download failed ${entry.objectKey}: $error');
-      await _db
-          .into(_db.mediaCacheEntries)
-          .insertOnConflictUpdate(entry.copyWith(state: 'failed'));
+      // Network/timeout/IO error — transient, retry on the next sync.
+      debugPrint('[MEDIA] download error ${entry.objectKey}: $error');
+      await _setState(entry, _stateFailed);
     }
   }
+
+  Future<void> _setState(MediaCacheEntry entry, String state) => _db
+      .into(_db.mediaCacheEntries)
+      .insertOnConflictUpdate(entry.copyWith(state: state));
 
   /// Presigned URL for the entry's object key, read from the owning product
   /// row (refreshed on every pull).

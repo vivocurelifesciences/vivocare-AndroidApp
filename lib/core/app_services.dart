@@ -49,7 +49,9 @@ class AppServices {
     dcrs = DcrRepository(db);
     products = ProductRepository(db);
 
-    SyncTriggers.onLocalMutation = syncEngine.scheduleAfterMutation;
+    // Sync is manual-only: local mutations do NOT schedule an automatic sync.
+    // The rep's changes stay queued in the outbox until they tap Sync.
+    SyncTriggers.onLocalMutation = null;
     _initialized = true;
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vivocure/core/layout/responsive.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_loader.dart';
 import 'package:vivocure/core/widgets/app_panel.dart';
@@ -23,6 +24,37 @@ class HomeDashboard extends StatelessWidget {
       compact ? 14 : 24,
       18,
     );
+
+    // Phones: a single scrolling column (events stacked under the cards) so
+    // nothing is squeezed side-by-side. Tablet layout below is unchanged.
+    if (context.isMobile) {
+      return SingleChildScrollView(
+        padding: contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AppReveal(
+              child: _HeaderSection(viewModel: viewModel, compact: true),
+            ),
+            const SizedBox(height: 16),
+            AppReveal(
+              delay: const Duration(milliseconds: 90),
+              child: _TodayPlanCard(viewModel: viewModel),
+            ),
+            const SizedBox(height: 14),
+            AppReveal(
+              delay: const Duration(milliseconds: 140),
+              child: _TodayTipCard(viewModel: viewModel),
+            ),
+            const SizedBox(height: 14),
+            AppReveal(
+              delay: const Duration(milliseconds: 190),
+              child: _UpcomingEventsPanel(viewModel: viewModel),
+            ),
+          ],
+        ),
+      );
+    }
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {

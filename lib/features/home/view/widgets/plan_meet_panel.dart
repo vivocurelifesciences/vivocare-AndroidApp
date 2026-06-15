@@ -1,8 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:vivocure/app/router/app_router.dart';
+import 'package:vivocure/core/app_services.dart';
+import 'package:vivocure/core/layout/responsive.dart';
 import 'package:vivocure/core/network/network_exception.dart';
 import 'package:vivocure/core/theme/app_colors.dart';
 import 'package:vivocure/core/widgets/app_alert_dialog.dart';
@@ -413,6 +414,86 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
     });
   }
 
+  /// Records the presented products, opens the full-screen presentation, and
+  /// when the rep returns offers to create the DCR straight away.
+  Future<void> _openPresentation(CustomerProfile customer) async {
+    // Remember exactly what was presented on this visit so the Create DCR
+    // sheet pre-fills the same products.
+    await widget.viewModel.recordPresentedSelection(
+      planId: widget.entry.id,
+      productIds: List<String>.of(_selectedMedicineIds),
+    );
+    if (!mounted) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _MedicinePresentationScreen(
+          presentations: _selectedMedicines,
+          customerName: customer.name,
+          isDoctor: widget.entry.isDoctor,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _promptCreateDcr();
+  }
+
+  /// After a presentation, ask whether to make the DCR now. Skipped when a DCR
+  /// already exists for this plan (no duplicates).
+  Future<void> _promptCreateDcr() async {
+    final existing = await AppServices.dcrs.getByPlanId(widget.entry.id);
+    if (!mounted || existing != null) {
+      return;
+    }
+    final bool create =
+        await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog(
+            title: const Text('Create DCR?'),
+            content: Text(
+              'Record a DCR for ${widget.entry.name} from this visit now? '
+              'Your presented products are already filled in.',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text("I'll Do It Later"),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Create DCR'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!create || !mounted) {
+      return;
+    }
+    // Close the customer details sheet, then open the pre-filled DCR sheet on
+    // the parent so the rep lands directly in the DCR workflow.
+    final NavigatorState navigator = Navigator.of(context);
+    final BuildContext parentContext = navigator.context;
+    navigator.pop();
+    if (!parentContext.mounted) {
+      return;
+    }
+    final String? message = await showDcrCreationSheet(
+      parentContext,
+      entry: widget.entry,
+      viewModel: widget.viewModel,
+    );
+    if (message != null && parentContext.mounted) {
+      await AppAlertDialog.showSuccess(
+        context: parentContext,
+        message: message,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final CustomerProfile customer = widget.viewModel
@@ -620,25 +701,7 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
               child: OutlinedButton.icon(
                 onPressed: _selectedMedicines.isEmpty
                     ? null
-                    : () {
-                        // Remember exactly what was presented on this visit so
-                        // the Create DCR sheet pre-fills the same products.
-                        unawaited(
-                          widget.viewModel.recordPresentedSelection(
-                            planId: widget.entry.id,
-                            productIds: List<String>.of(_selectedMedicineIds),
-                          ),
-                        );
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => _MedicinePresentationScreen(
-                              presentations: _selectedMedicines,
-                              customerName: customer.name,
-                              isDoctor: widget.entry.isDoctor,
-                            ),
-                          ),
-                        );
-                      },
+                    : () => _openPresentation(customer),
                 icon: const Icon(Icons.slideshow_outlined),
                 label: const Text('View Presentation'),
               ),
@@ -941,6 +1004,7 @@ extension on _MedicinePresentationScreenState {
           File(slide.localImagePath),
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
+          errorBuilder: (_, _, _) => _buildSlideFallback(slide.title),
         ),
       );
     }
@@ -1133,11 +1197,12 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final Size size = context.dialogSize(tabletWidth: 560, tabletHeight: 520);
     return AlertDialog(
       contentPadding: const EdgeInsets.all(16),
       content: SizedBox(
-        width: 560,
-        height: 520,
+        width: size.width,
+        height: size.height,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1433,11 +1498,12 @@ class _PlanMeetAddDialogState extends State<_PlanMeetAddDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final Size size = context.dialogSize(tabletWidth: 580, tabletHeight: 540);
     return AlertDialog(
       contentPadding: const EdgeInsets.all(16),
       content: SizedBox(
-        width: 580,
-        height: 540,
+        width: size.width,
+        height: size.height,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

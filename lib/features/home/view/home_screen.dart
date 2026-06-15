@@ -171,9 +171,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       final HomeViewModel viewModel = context.read<HomeViewModel>();
       viewModel.initializeFromArgs(args);
       viewModel.loadCachedProducts();
+      // Local reads only — sync is manual-only (Sync button), so opening the
+      // home screen never triggers a network sync.
       _refreshHomeApis(includePlanMeet: false);
-      // Day-start catch-up sync (no-op when offline).
-      unawaited(AppServices.syncEngine.syncNow(reason: 'home-open'));
     });
 
     _initialized = true;

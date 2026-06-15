@@ -13,8 +13,9 @@ Future<void> main() async {
   await AuthStorage.migrateFromSharedPreferences();
   await AppServices.init();
   runApp(const VivocureApp());
-  // Not needed for first paint — register after the UI is up.
+  // Sync is manual-only: no background job is registered. Tear down any
+  // periodic task left behind by an older build.
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(BackgroundSync.register());
+    unawaited(BackgroundSync.cancelAll());
   });
 }

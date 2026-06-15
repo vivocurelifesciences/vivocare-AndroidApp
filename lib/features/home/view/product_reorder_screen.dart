@@ -324,8 +324,17 @@ class _ProductReorderTile extends StatelessWidget {
   Widget _productImage() {
     final String? path = localImagePath;
     if (path != null) {
-      return Image.file(File(path), fit: BoxFit.cover);
+      return Image.file(
+        File(path),
+        fit: BoxFit.cover,
+        errorBuilder: (BuildContext context, Object error, StackTrace? trace) =>
+            _networkOrPlaceholder(),
+      );
     }
+    return _networkOrPlaceholder();
+  }
+
+  Widget _networkOrPlaceholder() {
     final String? url = product.primaryImageUrl;
     if (url != null && url.isNotEmpty) {
       return Image.network(
