@@ -6,6 +6,8 @@ import 'package:vivocure/core/sync/sync_engine.dart';
 import 'package:vivocure/data/repositories/chemist_repository.dart';
 import 'package:vivocure/data/repositories/dcr_repository.dart';
 import 'package:vivocure/data/repositories/doctor_repository.dart';
+import 'package:vivocure/data/repositories/execution_repository.dart';
+import 'package:vivocure/data/repositories/performance_repository.dart';
 import 'package:vivocure/data/repositories/plan_repository.dart';
 import 'package:vivocure/data/repositories/product_repository.dart';
 import 'package:vivocure/data/repositories/sync_triggers.dart';
@@ -29,6 +31,8 @@ class AppServices {
   static late final PlanRepository plans;
   static late final DcrRepository dcrs;
   static late final ProductRepository products;
+  static late final ExecutionRepository execution;
+  static late final PerformanceRepository performance;
 
   static bool _initialized = false;
   static bool get isInitialized => _initialized;
@@ -48,6 +52,8 @@ class AppServices {
     plans = PlanRepository(db);
     dcrs = DcrRepository(db);
     products = ProductRepository(db);
+    execution = ExecutionRepository(db);
+    performance = PerformanceRepository(api);
 
     // Sync is manual-only: local mutations do NOT schedule an automatic sync.
     // The rep's changes stay queued in the outbox until they tap Sync.

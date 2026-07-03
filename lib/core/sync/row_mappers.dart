@@ -115,6 +115,7 @@ DcrsCompanion dcrCompanion(Map<String, dynamic> r) => DcrsCompanion(
   potential: Value(_toDouble(r['potential'])),
   expectedSupportValue: Value(_toDouble(r['expected_support_value'])),
   productIds: Value(r['product_ids'] as String?),
+  productQuantitiesJson: Value(r['product_quantities'] as String?),
   cdt: Value(r['cdt'] as String?),
   status: Value((r['status'] ?? 'active') as String),
   isEnabled: Value(r['is_enabled'] as bool? ?? true),

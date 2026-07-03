@@ -352,6 +352,31 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
   /// Ordered: this is the exact slide order of the presentation.
   final List<String> _selectedMedicineIds = <String>[];
 
+  @override
+  void initState() {
+    super.initState();
+    _prefillFromLastSelection();
+  }
+
+  /// Pre-selects the products last associated with this same Doctor/Chemist so
+  /// repeat visits start from the previous selection (the rep can edit it).
+  Future<void> _prefillFromLastSelection() async {
+    final List<String> last = await widget.viewModel
+        .loadCustomerProductSelection(
+          customerType: widget.entry.type,
+          customerId: widget.entry.customerId,
+        );
+    if (!mounted || last.isEmpty || _selectedMedicineIds.isNotEmpty) {
+      return;
+    }
+    final Set<String> known = widget.viewModel.medicinePresentations
+        .map((MedicinePresentation m) => m.id)
+        .toSet();
+    setState(() {
+      _selectedMedicineIds.addAll(last.where(known.contains));
+    });
+  }
+
   /// Only what the rep explicitly selected — the presentation never
   /// auto-includes products.
   List<MedicinePresentation> get _selectedMedicines {
@@ -418,9 +443,15 @@ class _CustomerDetailsSheetState extends State<_CustomerDetailsSheet> {
   /// when the rep returns offers to create the DCR straight away.
   Future<void> _openPresentation(CustomerProfile customer) async {
     // Remember exactly what was presented on this visit so the Create DCR
-    // sheet pre-fills the same products.
+    // sheet pre-fills the same products...
     await widget.viewModel.recordPresentedSelection(
       planId: widget.entry.id,
+      productIds: List<String>.of(_selectedMedicineIds),
+    );
+    // ...and remember it for this customer's next visit too.
+    await widget.viewModel.recordCustomerProductSelection(
+      customerType: widget.entry.type,
+      customerId: widget.entry.customerId,
       productIds: List<String>.of(_selectedMedicineIds),
     );
     if (!mounted) {
@@ -786,14 +817,14 @@ class _MedicinePresentationScreen extends StatefulWidget {
 
 class _MedicinePresentationScreenState
     extends State<_MedicinePresentationScreen> {
-  static const String _introAssetPath = 'assets/images/presentation.jpeg';
   static const String _logoAssetPath = 'assets/images/vivocure_logo.jpeg';
 
   int _activeSlideIndex = 0;
   late final PageController _pageController;
 
-  /// Slide order is fixed: (1) the customer's name as the opening page,
-  /// (2) the company introduction, then (3) the selected products.
+  /// Slide order: (1) the customer's name as the opening page, then (2) the
+  /// selected products. The company-introduction slide is intentionally not
+  /// shown — the deck starts straight into the relevant content.
   List<_PresentationSlide> get _slides => <_PresentationSlide>[
     _PresentationSlide(
       kind: _SlideKind.title,
@@ -803,11 +834,6 @@ class _MedicinePresentationScreenState
       subtitle: widget.isDoctor
           ? 'Product presentation'
           : 'Product presentation • Chemist',
-    ),
-    const _PresentationSlide(
-      kind: _SlideKind.intro,
-      title: 'Company Introduction',
-      assetPath: _introAssetPath,
     ),
     ...widget.presentations.map(
       (MedicinePresentation item) => _PresentationSlide(
@@ -981,20 +1007,8 @@ class _PresentationActionButton extends StatelessWidget {
 
 extension on _MedicinePresentationScreenState {
   Widget _buildSlideImage(_PresentationSlide slide) {
-    switch (slide.kind) {
-      case _SlideKind.title:
-        return _buildTitleSlide(slide);
-      case _SlideKind.intro:
-        return SizedBox.expand(
-          child: Image.asset(
-            slide.assetPath,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-            errorBuilder: (_, _, _) => _buildSlideFallback(slide.title),
-          ),
-        );
-      case _SlideKind.product:
-        break;
+    if (slide.kind == _SlideKind.title) {
+      return _buildTitleSlide(slide);
     }
 
     if (slide.localImagePath.isNotEmpty &&
@@ -1048,59 +1062,75 @@ extension on _MedicinePresentationScreenState {
       ),
       child: Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.asset(
-                  _MedicinePresentationScreenState._logoAssetPath,
-                  width: 132,
-                  height: 132,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-              ),
-              const SizedBox(height: 28),
-              Text(
-                slide.title,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.4,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                slide.subtitle,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.72),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 36),
-              Row(
+          padding: const EdgeInsets.all(40),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              // Scale to the available space so the logo and name stay large
+              // and balanced on both phones and tablets.
+              final double logoSize = (constraints.maxWidth * 0.42).clamp(
+                180.0,
+                320.0,
+              );
+              final double nameSize = (constraints.maxWidth * 0.075).clamp(
+                34.0,
+                64.0,
+              );
+              return Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      _MedicinePresentationScreenState._logoAssetPath,
+                      width: logoSize,
+                      height: logoSize,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
                   Text(
-                    'Swipe to begin',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.55),
+                    slide.title,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: nameSize,
+                      height: 1.1,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    slide.subtitle,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.72),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 16,
-                    color: Colors.white.withValues(alpha: 0.55),
+                  const SizedBox(height: 40),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        'Swipe to begin',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 16,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),
@@ -1290,14 +1320,13 @@ class _MedicineSelectionDialogState extends State<_MedicineSelectionDialog> {
   }
 }
 
-enum _SlideKind { title, intro, product }
+enum _SlideKind { title, product }
 
 class _PresentationSlide {
   const _PresentationSlide({
     required this.kind,
     required this.title,
     this.subtitle = '',
-    this.assetPath = '',
     this.localImagePath = '',
     this.imageUrl = '',
   });
@@ -1305,7 +1334,6 @@ class _PresentationSlide {
   final _SlideKind kind;
   final String title;
   final String subtitle;
-  final String assetPath;
   final String localImagePath;
   final String imageUrl;
 }

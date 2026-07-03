@@ -12,9 +12,10 @@ class HomeViewModel extends ChangeNotifier {
   static const int homeMenuIndex = 0;
   static const int planMeetMenuIndex = 1;
   static const int executionMenuIndex = 2;
-  static const int addDoctorMenuIndex = 3;
-  static const int addChemistMenuIndex = 4;
-  static const int logoutMenuIndex = 5;
+  static const int performanceMenuIndex = 3;
+  static const int addDoctorMenuIndex = 4;
+  static const int addChemistMenuIndex = 5;
+  static const int logoutMenuIndex = 6;
 
   String _userName = '';
   String _roleName = '';
@@ -57,6 +58,10 @@ class HomeViewModel extends ChangeNotifier {
       isActive: _selectedMenuIndex == planMeetMenuIndex,
     ),
     const HomeMenuItem(label: 'Execution', icon: Icons.trending_up_outlined),
+    const HomeMenuItem(
+      label: 'Performance',
+      icon: Icons.leaderboard_outlined,
+    ),
     const HomeMenuItem(label: 'Add Doctor', icon: Icons.person_add_outlined),
     const HomeMenuItem(
       label: 'Add Chemist',
@@ -589,11 +594,11 @@ class HomeViewModel extends ChangeNotifier {
     await fetchPlanMeetEntries(visitDate: visitDate);
     await fetchTodayPlan();
     if (created.isEmpty) {
-      return 'These customers are already planned for this date.';
+      return 'These customers already have an open plan for this date.';
     }
     if (created.length < entries.length) {
       return '${created.length} plan(s) saved; '
-          '${entries.length - created.length} already existed.';
+          '${entries.length - created.length} already had an open plan.';
     }
     return 'Plans created successfully.';
   }
@@ -603,6 +608,8 @@ class HomeViewModel extends ChangeNotifier {
     required int supportValue,
     required int expectedSupportValue,
     List<String> productIds = const <String>[],
+    Map<String, int> productQuantities = const <String, int>{},
+    DateTime? visitDate,
   }) async {
     final String trimmedPlanId = planId.trim();
     if (trimmedPlanId.isEmpty) {
@@ -619,7 +626,19 @@ class HomeViewModel extends ChangeNotifier {
       supportValue: supportValue.toDouble(),
       expectedSupportValue: expectedSupportValue.toDouble(),
       productIds: cleanedProductIds,
+      productQuantities: productQuantities,
+      visitDate: visitDate,
     );
+
+    // Remember these products for this customer's next visit.
+    final db.DailyPlan? plan = await AppServices.plans.getById(trimmedPlanId);
+    if (plan != null) {
+      await recordCustomerProductSelection(
+        customerType: plan.customerType,
+        customerId: plan.customerId,
+        productIds: cleanedProductIds,
+      );
+    }
 
     // The presented selection has served its purpose for this visit.
     await clearPresentedSelection(trimmedPlanId);
@@ -833,6 +852,9 @@ class HomeViewModel extends ChangeNotifier {
     final List<db.Product> products = await AppServices.products.byIds(
       productIds,
     );
+    final Map<String, int> quantities = _parseQuantities(
+      row.productQuantitiesJson,
+    );
 
     final DateTime visitDateTime =
         DateTime.tryParse(row.visitDatetime) ?? DateTime.now();
@@ -859,6 +881,7 @@ class HomeViewModel extends ChangeNotifier {
               id: p.id,
               productName: p.productName,
               productCode: p.productCode ?? '',
+              quantity: quantities[p.id] ?? 0,
             ),
           )
           .toList(growable: false),
@@ -875,6 +898,29 @@ class HomeViewModel extends ChangeNotifier {
       return value.toInt().toString();
     }
     return value.toString();
+  }
+
+  /// Parses the DCR's product_quantities JSON ({productId: qty}) into a map.
+  Map<String, int> _parseQuantities(String? json) {
+    if (json == null || json.isEmpty) {
+      return const <String, int>{};
+    }
+    try {
+      final dynamic decoded = jsonDecode(json);
+      if (decoded is! Map) {
+        return const <String, int>{};
+      }
+      final Map<String, int> result = <String, int>{};
+      decoded.forEach((dynamic key, dynamic value) {
+        final int? qty = value is int ? value : int.tryParse(value.toString());
+        if (qty != null && qty > 0) {
+          result[key.toString()] = qty;
+        }
+      });
+      return result;
+    } catch (_) {
+      return const <String, int>{};
+    }
   }
 
   Future<void> setDcrDateRange({
@@ -979,6 +1025,51 @@ class HomeViewModel extends ChangeNotifier {
 
   Future<void> clearPresentedSelection(String planId) =>
       AppServices.db.setKv(_presentedSelectionKey(planId), null);
+
+  // ----------------------------------------------- per-customer product memory
+  // The last products chosen for a Doctor/Chemist, so the next visit to the
+  // same customer pre-selects them. Updated whenever products are chosen for
+  // that customer (presentation prep / DCR), independent of any single plan.
+
+  static String _customerProductsKey(String customerType, String customerId) =>
+      'last_products_${customerType.trim().toLowerCase()}_${customerId.trim()}';
+
+  Future<void> recordCustomerProductSelection({
+    required String customerType,
+    required String customerId,
+    required List<String> productIds,
+  }) async {
+    if (customerId.trim().isEmpty || productIds.isEmpty) {
+      return;
+    }
+    await AppServices.db.setKv(
+      _customerProductsKey(customerType, customerId),
+      jsonEncode(productIds),
+    );
+  }
+
+  Future<List<String>> loadCustomerProductSelection({
+    required String customerType,
+    required String customerId,
+  }) async {
+    if (customerId.trim().isEmpty) {
+      return const <String>[];
+    }
+    final String? raw = await AppServices.db.getKv(
+      _customerProductsKey(customerType, customerId),
+    );
+    if (raw == null || raw.isEmpty) {
+      return const <String>[];
+    }
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .map((dynamic id) => id.toString())
+          .where((String id) => id.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
 
   /// Complete presentation history for this customer (most recent visit
   /// first) plus the union of everything they have already seen. Reads the
@@ -1507,11 +1598,15 @@ class DcrProduct {
     required this.id,
     required this.productName,
     required this.productCode,
+    this.quantity = 0,
   });
 
   final String id;
   final String productName;
   final String productCode;
+
+  /// Sample quantity recorded for this product on the DCR (0 = none recorded).
+  final int quantity;
 
   String get displayLabel {
     if (productCode.isEmpty) {

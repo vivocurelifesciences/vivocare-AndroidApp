@@ -4449,6 +4449,17 @@ class $DcrsTable extends Dcrs with TableInfo<$DcrsTable, Dcr> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _productQuantitiesJsonMeta =
+      const VerificationMeta('productQuantitiesJson');
+  @override
+  late final GeneratedColumn<String> productQuantitiesJson =
+      GeneratedColumn<String>(
+        'product_quantities_json',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _cdtMeta = const VerificationMeta('cdt');
   @override
   late final GeneratedColumn<String> cdt = GeneratedColumn<String>(
@@ -4474,6 +4485,7 @@ class $DcrsTable extends Dcrs with TableInfo<$DcrsTable, Dcr> {
     potential,
     expectedSupportValue,
     productIds,
+    productQuantitiesJson,
     cdt,
   ];
   @override
@@ -4588,6 +4600,15 @@ class $DcrsTable extends Dcrs with TableInfo<$DcrsTable, Dcr> {
         productIds.isAcceptableOrUnknown(data['product_ids']!, _productIdsMeta),
       );
     }
+    if (data.containsKey('product_quantities_json')) {
+      context.handle(
+        _productQuantitiesJsonMeta,
+        productQuantitiesJson.isAcceptableOrUnknown(
+          data['product_quantities_json']!,
+          _productQuantitiesJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('cdt')) {
       context.handle(
         _cdtMeta,
@@ -4659,6 +4680,10 @@ class $DcrsTable extends Dcrs with TableInfo<$DcrsTable, Dcr> {
         DriftSqlType.string,
         data['${effectivePrefix}product_ids'],
       ),
+      productQuantitiesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}product_quantities_json'],
+      ),
       cdt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}cdt'],
@@ -4687,6 +4712,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
   final double? potential;
   final double? expectedSupportValue;
   final String? productIds;
+
+  /// JSON object mapping product id -> sample quantity recorded for the visit.
+  final String? productQuantitiesJson;
   final String? cdt;
   const Dcr({
     required this.status,
@@ -4703,6 +4731,7 @@ class Dcr extends DataClass implements Insertable<Dcr> {
     this.potential,
     this.expectedSupportValue,
     this.productIds,
+    this.productQuantitiesJson,
     this.cdt,
   });
   @override
@@ -4739,6 +4768,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
     }
     if (!nullToAbsent || productIds != null) {
       map['product_ids'] = Variable<String>(productIds);
+    }
+    if (!nullToAbsent || productQuantitiesJson != null) {
+      map['product_quantities_json'] = Variable<String>(productQuantitiesJson);
     }
     if (!nullToAbsent || cdt != null) {
       map['cdt'] = Variable<String>(cdt);
@@ -4780,6 +4812,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
       productIds: productIds == null && nullToAbsent
           ? const Value.absent()
           : Value(productIds),
+      productQuantitiesJson: productQuantitiesJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productQuantitiesJson),
       cdt: cdt == null && nullToAbsent ? const Value.absent() : Value(cdt),
     );
   }
@@ -4806,6 +4841,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
         json['expectedSupportValue'],
       ),
       productIds: serializer.fromJson<String?>(json['productIds']),
+      productQuantitiesJson: serializer.fromJson<String?>(
+        json['productQuantitiesJson'],
+      ),
       cdt: serializer.fromJson<String?>(json['cdt']),
     );
   }
@@ -4827,6 +4865,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
       'potential': serializer.toJson<double?>(potential),
       'expectedSupportValue': serializer.toJson<double?>(expectedSupportValue),
       'productIds': serializer.toJson<String?>(productIds),
+      'productQuantitiesJson': serializer.toJson<String?>(
+        productQuantitiesJson,
+      ),
       'cdt': serializer.toJson<String?>(cdt),
     };
   }
@@ -4846,6 +4887,7 @@ class Dcr extends DataClass implements Insertable<Dcr> {
     Value<double?> potential = const Value.absent(),
     Value<double?> expectedSupportValue = const Value.absent(),
     Value<String?> productIds = const Value.absent(),
+    Value<String?> productQuantitiesJson = const Value.absent(),
     Value<String?> cdt = const Value.absent(),
   }) => Dcr(
     status: status ?? this.status,
@@ -4866,6 +4908,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
         ? expectedSupportValue.value
         : this.expectedSupportValue,
     productIds: productIds.present ? productIds.value : this.productIds,
+    productQuantitiesJson: productQuantitiesJson.present
+        ? productQuantitiesJson.value
+        : this.productQuantitiesJson,
     cdt: cdt.present ? cdt.value : this.cdt,
   );
   Dcr copyWithCompanion(DcrsCompanion data) {
@@ -4896,6 +4941,9 @@ class Dcr extends DataClass implements Insertable<Dcr> {
       productIds: data.productIds.present
           ? data.productIds.value
           : this.productIds,
+      productQuantitiesJson: data.productQuantitiesJson.present
+          ? data.productQuantitiesJson.value
+          : this.productQuantitiesJson,
       cdt: data.cdt.present ? data.cdt.value : this.cdt,
     );
   }
@@ -4917,6 +4965,7 @@ class Dcr extends DataClass implements Insertable<Dcr> {
           ..write('potential: $potential, ')
           ..write('expectedSupportValue: $expectedSupportValue, ')
           ..write('productIds: $productIds, ')
+          ..write('productQuantitiesJson: $productQuantitiesJson, ')
           ..write('cdt: $cdt')
           ..write(')'))
         .toString();
@@ -4938,6 +4987,7 @@ class Dcr extends DataClass implements Insertable<Dcr> {
     potential,
     expectedSupportValue,
     productIds,
+    productQuantitiesJson,
     cdt,
   );
   @override
@@ -4958,6 +5008,7 @@ class Dcr extends DataClass implements Insertable<Dcr> {
           other.potential == this.potential &&
           other.expectedSupportValue == this.expectedSupportValue &&
           other.productIds == this.productIds &&
+          other.productQuantitiesJson == this.productQuantitiesJson &&
           other.cdt == this.cdt);
 }
 
@@ -4976,6 +5027,7 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
   final Value<double?> potential;
   final Value<double?> expectedSupportValue;
   final Value<String?> productIds;
+  final Value<String?> productQuantitiesJson;
   final Value<String?> cdt;
   final Value<int> rowid;
   const DcrsCompanion({
@@ -4993,6 +5045,7 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
     this.potential = const Value.absent(),
     this.expectedSupportValue = const Value.absent(),
     this.productIds = const Value.absent(),
+    this.productQuantitiesJson = const Value.absent(),
     this.cdt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -5011,6 +5064,7 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
     this.potential = const Value.absent(),
     this.expectedSupportValue = const Value.absent(),
     this.productIds = const Value.absent(),
+    this.productQuantitiesJson = const Value.absent(),
     this.cdt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -5030,6 +5084,7 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
     Expression<double>? potential,
     Expression<double>? expectedSupportValue,
     Expression<String>? productIds,
+    Expression<String>? productQuantitiesJson,
     Expression<String>? cdt,
     Expression<int>? rowid,
   }) {
@@ -5049,6 +5104,8 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
       if (expectedSupportValue != null)
         'expected_support_value': expectedSupportValue,
       if (productIds != null) 'product_ids': productIds,
+      if (productQuantitiesJson != null)
+        'product_quantities_json': productQuantitiesJson,
       if (cdt != null) 'cdt': cdt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -5069,6 +5126,7 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
     Value<double?>? potential,
     Value<double?>? expectedSupportValue,
     Value<String?>? productIds,
+    Value<String?>? productQuantitiesJson,
     Value<String?>? cdt,
     Value<int>? rowid,
   }) {
@@ -5087,6 +5145,8 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
       potential: potential ?? this.potential,
       expectedSupportValue: expectedSupportValue ?? this.expectedSupportValue,
       productIds: productIds ?? this.productIds,
+      productQuantitiesJson:
+          productQuantitiesJson ?? this.productQuantitiesJson,
       cdt: cdt ?? this.cdt,
       rowid: rowid ?? this.rowid,
     );
@@ -5139,6 +5199,11 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
     if (productIds.present) {
       map['product_ids'] = Variable<String>(productIds.value);
     }
+    if (productQuantitiesJson.present) {
+      map['product_quantities_json'] = Variable<String>(
+        productQuantitiesJson.value,
+      );
+    }
     if (cdt.present) {
       map['cdt'] = Variable<String>(cdt.value);
     }
@@ -5165,6 +5230,7 @@ class DcrsCompanion extends UpdateCompanion<Dcr> {
           ..write('potential: $potential, ')
           ..write('expectedSupportValue: $expectedSupportValue, ')
           ..write('productIds: $productIds, ')
+          ..write('productQuantitiesJson: $productQuantitiesJson, ')
           ..write('cdt: $cdt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -11019,6 +11085,7 @@ typedef $$DcrsTableCreateCompanionBuilder =
       Value<double?> potential,
       Value<double?> expectedSupportValue,
       Value<String?> productIds,
+      Value<String?> productQuantitiesJson,
       Value<String?> cdt,
       Value<int> rowid,
     });
@@ -11038,6 +11105,7 @@ typedef $$DcrsTableUpdateCompanionBuilder =
       Value<double?> potential,
       Value<double?> expectedSupportValue,
       Value<String?> productIds,
+      Value<String?> productQuantitiesJson,
       Value<String?> cdt,
       Value<int> rowid,
     });
@@ -11117,6 +11185,11 @@ class $$DcrsTableFilterComposer extends Composer<_$AppDatabase, $DcrsTable> {
 
   ColumnFilters<String> get productIds => $composableBuilder(
     column: $table.productIds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get productQuantitiesJson => $composableBuilder(
+    column: $table.productQuantitiesJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11204,6 +11277,11 @@ class $$DcrsTableOrderingComposer extends Composer<_$AppDatabase, $DcrsTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get productQuantitiesJson => $composableBuilder(
+    column: $table.productQuantitiesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get cdt => $composableBuilder(
     column: $table.cdt,
     builder: (column) => ColumnOrderings(column),
@@ -11273,6 +11351,11 @@ class $$DcrsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get productQuantitiesJson => $composableBuilder(
+    column: $table.productQuantitiesJson,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get cdt =>
       $composableBuilder(column: $table.cdt, builder: (column) => column);
 }
@@ -11319,6 +11402,7 @@ class $$DcrsTableTableManager
                 Value<double?> potential = const Value.absent(),
                 Value<double?> expectedSupportValue = const Value.absent(),
                 Value<String?> productIds = const Value.absent(),
+                Value<String?> productQuantitiesJson = const Value.absent(),
                 Value<String?> cdt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DcrsCompanion(
@@ -11336,6 +11420,7 @@ class $$DcrsTableTableManager
                 potential: potential,
                 expectedSupportValue: expectedSupportValue,
                 productIds: productIds,
+                productQuantitiesJson: productQuantitiesJson,
                 cdt: cdt,
                 rowid: rowid,
               ),
@@ -11355,6 +11440,7 @@ class $$DcrsTableTableManager
                 Value<double?> potential = const Value.absent(),
                 Value<double?> expectedSupportValue = const Value.absent(),
                 Value<String?> productIds = const Value.absent(),
+                Value<String?> productQuantitiesJson = const Value.absent(),
                 Value<String?> cdt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DcrsCompanion.insert(
@@ -11372,6 +11458,7 @@ class $$DcrsTableTableManager
                 potential: potential,
                 expectedSupportValue: expectedSupportValue,
                 productIds: productIds,
+                productQuantitiesJson: productQuantitiesJson,
                 cdt: cdt,
                 rowid: rowid,
               ),

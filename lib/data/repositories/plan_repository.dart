@@ -61,9 +61,10 @@ class PlanRepository {
     );
   }
 
-  /// Bulk create (mirrors POST /plans). Skips entries that already have an
-  /// enabled plan for the same (date, customer) — same rule the server
-  /// enforces with its unique index. Returns ids of created plans.
+  /// Bulk create (mirrors POST /plans). Skips an entry only when the customer
+  /// still has an OPEN plan (one without a DCR) for the same date — a
+  /// completed visit (plan already has a DCR) never blocks planning another
+  /// visit for the same customer and day. Returns ids of created plans.
   Future<List<String>> createPlans({
     required DateTime visitDate,
     required List<({String customerId, String customerType})> customers,
@@ -73,7 +74,7 @@ class PlanRepository {
     final List<String> created = <String>[];
     await _db.transaction(() async {
       for (final customer in customers) {
-        final DailyPlan? duplicate =
+        final List<DailyPlan> existing =
             await (_db.select(_db.dailyPlans)..where(
                   (t) =>
                       t.visitDate.equals(day) &
@@ -81,8 +82,19 @@ class PlanRepository {
                       t.customerType.equals(customer.customerType) &
                       t.isEnabled.equals(true),
                 ))
-                .getSingleOrNull();
-        if (duplicate != null) {
+                .get();
+        bool hasOpenPlan = false;
+        for (final DailyPlan plan in existing) {
+          final List<Dcr> dcrs = await (_db.select(_db.dcrs)..where(
+                (t) => t.planId.equals(plan.id) & t.isEnabled.equals(true),
+              ))
+              .get();
+          if (dcrs.isEmpty) {
+            hasOpenPlan = true;
+            break;
+          }
+        }
+        if (hasOpenPlan) {
           continue;
         }
         final String id = const Uuid().v7();

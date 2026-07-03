@@ -199,7 +199,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -211,6 +211,10 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.createTable(presentationRecords);
         await _createIndexes();
+      }
+      if (from < 3) {
+        // Sample quantities per product, recorded at DCR creation.
+        await m.addColumn(dcrs, dcrs.productQuantitiesJson);
       }
     },
   );

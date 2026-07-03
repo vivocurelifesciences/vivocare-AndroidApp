@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vivocure/core/db/app_database.dart';
@@ -70,6 +72,8 @@ class DcrRepository {
     double? expectedSupportValue,
     String? remarks,
     List<String> productIds = const <String>[],
+    Map<String, int> productQuantities = const <String, int>{},
+    DateTime? visitDate,
   }) async {
     final DailyPlan? plan = await (_db.select(
       _db.dailyPlans,
@@ -84,8 +88,20 @@ class DcrRepository {
 
     final String id = const Uuid().v7();
     final String now = DateTime.now().toUtc().toIso8601String();
-    final String visitDatetime = '${plan.visitDate}T00:00:00';
+    // Backdated DCRs: an explicit [visitDate] overrides the plan's date.
+    final String visitDay = visitDate != null
+        ? _dateKey(visitDate)
+        : plan.visitDate;
+    final String visitDatetime = '${visitDay}T00:00:00';
     final String productIdsCsv = productIds.join(',');
+    // Keep only quantities for products actually selected.
+    final Map<String, int> cleanQuantities = <String, int>{
+      for (final String pid in productIds)
+        if ((productQuantities[pid] ?? 0) > 0) pid: productQuantities[pid]!,
+    };
+    final String? productQuantitiesJson = cleanQuantities.isEmpty
+        ? null
+        : jsonEncode(cleanQuantities);
 
     await _db.transaction(() async {
       await _db
@@ -99,6 +115,7 @@ class DcrRepository {
               supportValue: Value(supportValue),
               expectedSupportValue: Value(expectedSupportValue),
               productIds: Value(productIdsCsv),
+              productQuantitiesJson: Value(productQuantitiesJson),
               cdt: Value(now),
               localStatus: const Value('pending_create'),
               locallyChangedAt: Value(now),
@@ -139,6 +156,7 @@ class DcrRepository {
           'support_value': supportValue,
           'expected_support_value': expectedSupportValue,
           'product_ids': productIdsCsv,
+          'product_quantities': productQuantitiesJson,
         },
       );
 

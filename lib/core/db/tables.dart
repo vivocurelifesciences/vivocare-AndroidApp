@@ -107,6 +107,9 @@ class Dcrs extends Table with SyncColumns {
   RealColumn get potential => real().nullable()();
   RealColumn get expectedSupportValue => real().nullable()();
   TextColumn get productIds => text().nullable()();
+
+  /// JSON object mapping product id -> sample quantity recorded for the visit.
+  TextColumn get productQuantitiesJson => text().nullable()();
   TextColumn get cdt => text().nullable()();
 
   @override

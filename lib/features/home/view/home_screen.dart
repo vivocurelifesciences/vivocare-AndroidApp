@@ -236,11 +236,17 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
                                     if (index ==
                                         HomeViewModel.executionMenuIndex) {
-                                      AppAlertDialog.showInfo(
-                                        context: context,
-                                        title: 'Execution',
-                                        message: 'Work is under progress',
-                                      );
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.execution);
+                                      return;
+                                    }
+
+                                    if (index ==
+                                        HomeViewModel.performanceMenuIndex) {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed(AppRoutes.performance);
                                       return;
                                     }
 

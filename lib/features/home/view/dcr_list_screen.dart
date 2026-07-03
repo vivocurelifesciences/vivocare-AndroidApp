@@ -563,6 +563,14 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
   CustomerPresentationHistory? _history;
   bool _historyExpanded = false;
   bool _prefilledFromPresentation = false;
+  bool _prefilledFromCustomer = false;
+
+  /// Sample quantity per selected product id (defaults to 1 when selected).
+  final Map<String, int> _quantities = <String, int>{};
+
+  /// The DCR's visit date — defaults to the plan's date, editable for
+  /// backdated entries.
+  late DateTime _visitDate;
 
   List<MedicinePresentation> get _selectedMedicines {
     final Map<String, MedicinePresentation> byId =
@@ -594,20 +602,38 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
     _expectedSupportValueController = TextEditingController(
       text: _initialNumericValue(customer.expectedSupportValue),
     );
+    _visitDate = widget.entry.visitDate;
     _loadPresentationSelection();
   }
 
+  /// Ensures every selected product has a quantity (default 1).
+  void _syncQuantityDefaults() {
+    for (final String id in _selectedMedicineIds) {
+      _quantities.putIfAbsent(id, () => 1);
+    }
+    _quantities.removeWhere(
+      (String id, _) => !_selectedMedicineIds.contains(id),
+    );
+  }
+
   Future<void> _loadPresentationSelection() async {
-    // Pre-fill with exactly what was shown in View Presentation for this
-    // visit (recorded per plan) — not the whole history, and never every
-    // product. Validate against the known product list so stale ids drop out.
+    // Pre-fill priority: (1) exactly what was shown in View Presentation for
+    // this visit (per plan); else (2) the products last used for this same
+    // customer (per doctor/chemist). The rep can still edit before saving.
     final List<String> presented = await widget.viewModel
         .loadPresentedSelection(widget.entry.id);
-    final List<MedicinePresentation> presentedMedicines = widget.viewModel
-        .getMedicinePresentationsByIds(presented);
-    final Map<String, MedicinePresentation> presentedById =
+    final List<String> lastForCustomer = await widget.viewModel
+        .loadCustomerProductSelection(
+          customerType: widget.entry.type,
+          customerId: widget.entry.customerId,
+        );
+    final bool usingPresented = presented.isNotEmpty;
+    final List<String> source = usingPresented ? presented : lastForCustomer;
+    final Map<String, MedicinePresentation> byId =
         <String, MedicinePresentation>{
-          for (final MedicinePresentation m in presentedMedicines) m.id: m,
+          for (final MedicinePresentation m
+              in widget.viewModel.getMedicinePresentationsByIds(source))
+            m.id: m,
         };
 
     final CustomerPresentationHistory? history = await widget.viewModel
@@ -617,11 +643,30 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
     }
     setState(() {
       _history = history;
-      if (_selectedMedicineIds.isEmpty && presented.isNotEmpty) {
-        // Preserve the presented order.
-        _selectedMedicineIds.addAll(presented.where(presentedById.containsKey));
-        _prefilledFromPresentation = _selectedMedicineIds.isNotEmpty;
+      if (_selectedMedicineIds.isEmpty && source.isNotEmpty) {
+        _selectedMedicineIds.addAll(source.where(byId.containsKey));
+        _prefilledFromPresentation = usingPresented;
+        _prefilledFromCustomer =
+            !usingPresented && _selectedMedicineIds.isNotEmpty;
       }
+      _syncQuantityDefaults();
+    });
+  }
+
+  Future<void> _pickVisitDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _visitDate,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      helpText: 'Select DCR visit date',
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _visitDate = DateTime(picked.year, picked.month, picked.day);
     });
   }
 
@@ -657,6 +702,13 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
           _selectedMedicineIds.add(m.id);
         }
       }
+      _syncQuantityDefaults();
+    });
+  }
+
+  void _setQuantity(String productId, int qty) {
+    setState(() {
+      _quantities[productId] = qty.clamp(1, 9999);
     });
   }
 
@@ -707,6 +759,12 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
         supportValue: supportValue,
         expectedSupportValue: expectedSupportValue,
         productIds: _selectedMedicineIds.toList(growable: false),
+        productQuantities: Map<String, int>.fromEntries(
+          _selectedMedicineIds.map(
+            (String id) => MapEntry<String, int>(id, _quantities[id] ?? 1),
+          ),
+        ),
+        visitDate: _visitDate,
       );
       if (!mounted) {
         return;
@@ -836,6 +894,32 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
                       ),
                     ],
                     const SizedBox(height: 14),
+                    // Backdated DCRs: pick the visit date (defaults to plan).
+                    InkWell(
+                      onTap: _pickVisitDate,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Visit date',
+                          prefixIcon: Icon(Icons.event_outlined),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              widget.viewModel.formatShortDate(_visitDate),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            const Icon(
+                              Icons.edit_calendar_outlined,
+                              size: 18,
+                              color: AppColors.textSecondary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     Row(
                       children: [
                         Expanded(
@@ -902,12 +986,15 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      if (_prefilledFromPresentation)
+                      if (_prefilledFromPresentation || _prefilledFromCustomer)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Text(
-                            'Pre-filled with the products you showed in View '
-                            'Presentation. Adjust if needed.',
+                            _prefilledFromPresentation
+                                ? 'Pre-filled with the products you showed in '
+                                      'View Presentation. Adjust if needed.'
+                                : 'Pre-filled with this customer\'s last '
+                                      'products. Adjust if needed.',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(fontStyle: FontStyle.italic),
                           ),
@@ -940,10 +1027,14 @@ class _PlanDcrCreationSheetState extends State<_PlanDcrCreationSheet> {
                           itemBuilder: (BuildContext context, int index) {
                             final MedicinePresentation item =
                                 _selectedMedicines[index];
+                            final int qty = _quantities[item.id] ?? 1;
                             return _SelectedMedicineTile(
                               key: ValueKey<String>(item.id),
                               index: index,
                               medicine: item,
+                              quantity: qty,
+                              onQuantityChanged: (int next) =>
+                                  _setQuantity(item.id, next),
                               onRemove: () {
                                 setState(() {
                                   _selectedMedicineIds.remove(item.id);
@@ -1332,7 +1423,11 @@ class _DcrEntryCard extends StatelessWidget {
                             visualDensity: VisualDensity.compact,
                             backgroundColor: const Color(0xFFF6FAFE),
                             side: const BorderSide(color: AppColors.border),
-                            label: Text(product.displayLabel),
+                            label: Text(
+                              product.quantity > 0
+                                  ? '${product.displayLabel}  ×${product.quantity}'
+                                  : product.displayLabel,
+                            ),
                           ),
                         )
                         .toList(growable: false),
@@ -1660,17 +1755,22 @@ class _PresentationHistoryCard extends StatelessWidget {
   }
 }
 
-/// One row of the in-sheet presentation order: position, name, drag handle.
+/// One row of the in-sheet presentation order: position, name, sample-quantity
+/// stepper, remove, drag handle.
 class _SelectedMedicineTile extends StatelessWidget {
   const _SelectedMedicineTile({
     super.key,
     required this.index,
     required this.medicine,
+    required this.quantity,
+    required this.onQuantityChanged,
     required this.onRemove,
   });
 
   final int index;
   final MedicinePresentation medicine;
+  final int quantity;
+  final ValueChanged<int> onQuantityChanged;
   final VoidCallback onRemove;
 
   @override
@@ -1705,17 +1805,27 @@ class _SelectedMedicineTile extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                medicine.code.isEmpty
-                    ? medicine.name
-                    : '${medicine.name} (${medicine.code})',
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    medicine.code.isEmpty
+                        ? medicine.name
+                        : '${medicine.name} (${medicine.code})',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Sample qty: $quantity',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
+            _QuantityStepper(quantity: quantity, onChanged: onQuantityChanged),
             IconButton(
               tooltip: 'Remove',
               visualDensity: VisualDensity.compact,
@@ -1734,6 +1844,68 @@ class _SelectedMedicineTile extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact -/+ stepper for a product's sample quantity (minimum 1).
+class _QuantityStepper extends StatelessWidget {
+  const _QuantityStepper({required this.quantity, required this.onChanged});
+
+  final int quantity;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardTint,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StepButton(
+            icon: Icons.remove,
+            onTap: quantity > 1 ? () => onChanged(quantity - 1) : null,
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$quantity',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          _StepButton(icon: Icons.add, onTap: () => onChanged(quantity + 1)),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(
+          icon,
+          size: 18,
+          color: onTap == null
+              ? AppColors.textSecondary.withValues(alpha: 0.4)
+              : AppColors.primaryBlue,
         ),
       ),
     );

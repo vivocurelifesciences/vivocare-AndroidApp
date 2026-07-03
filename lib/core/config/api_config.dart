@@ -4,7 +4,7 @@ class ApiConfig {
   static const String _hostOverride = String.fromEnvironment('API_HOST');
   static const String _schemeOverride = String.fromEnvironment('API_SCHEME');
 
-  static const String _defaultHost = 'prod-api.vivocurelifesciences.com';
+  static const String _defaultHost = 'pre-prod-api.vivocurelifesciences.com';
   static const String _defaultScheme = 'https';
 
   static const String apiVersionPath = '/api/v1';

@@ -10,6 +10,8 @@ import 'package:vivocure/features/auth/view/login_success_screen.dart';
 import 'package:vivocure/features/auth/view_model/login_view_model.dart';
 import 'package:vivocure/features/auth/repository/auth_repository.dart';
 import 'package:vivocure/features/home/view/home_screen.dart';
+import 'package:vivocure/features/execution/view/execution_screen.dart';
+import 'package:vivocure/features/execution/view/performance_screen.dart';
 import 'package:vivocure/features/home/view/product_reorder_screen.dart';
 import 'package:vivocure/features/home/view_model/home_view_model.dart';
 import 'package:vivocure/features/splash/view/splash_screen.dart';
@@ -25,6 +27,8 @@ class AppRoutes {
   static const String addChemist = '/add-chemist';
   static const String syncInbox = '/sync-inbox';
   static const String reorderProducts = '/reorder-products';
+  static const String execution = '/execution';
+  static const String performance = '/performance';
 }
 
 class AppRouter {
@@ -95,6 +99,16 @@ class AppRouter {
         return MaterialPageRoute<List<String>>(
           settings: settings,
           builder: (_) => ProductReorderScreen(selectedIds: selectedIds),
+        );
+      case AppRoutes.execution:
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const ExecutionScreen(),
+        );
+      case AppRoutes.performance:
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const PerformanceScreen(),
         );
       default:
         return MaterialPageRoute<void>(
